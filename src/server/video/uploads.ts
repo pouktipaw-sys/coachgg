@@ -19,13 +19,22 @@ export const createUploadSchema = z.object({
   mimeType: z.string().max(100).default(""),
   title: z.string().trim().max(120).optional(),
   matchId: z.string().optional(),
+  // Synchronisation : temps vidéo (ms) à 00:00 en jeu (fourni par l'application PC, ou saisi).
+  gameStartOffsetMs: z.number().int().min(-6 * 3600_000).max(6 * 3600_000).optional(),
+  capturedAt: z.coerce.date().optional(),
+  clientUploadId: z.string().trim().regex(/^[\w-]{8,64}$/).optional(),
 });
 
 const MAX_ACTIVE_UPLOADS = 3;
 const MAX_UPLOADS_PER_DAY = 30;
 
-export async function createUpload(userId: string, raw: unknown) {
+export async function createUpload(userId: string, raw: unknown, device: { id: string } | null = null) {
   const input = createUploadSchema.parse(raw);
+  // Reprise idempotente côté appareil : même clé → même enregistrement.
+  if (device && input.clientUploadId) {
+    const existing = await prisma.recording.findUnique({ where: { deviceId_clientUploadId: { deviceId: device.id, clientUploadId: input.clientUploadId } } });
+    if (existing && existing.ownerId === userId) return { id: existing.id, chunkSize: env.chunkBytes, receivedBytes: Number(existing.receivedBytes), status: existing.status };
+  }
   const ext = extensionOf(input.filename);
   if (!ext) throw badRequest("Format non pris en charge. Formats acceptés : MP4, MOV, M4V, WEBM, MKV.");
   if (!mimeAcceptable(input.mimeType)) throw badRequest(`Type de fichier refusé (${input.mimeType}).`);
@@ -61,12 +70,17 @@ export async function createUpload(userId: string, raw: unknown) {
       declaredMime: input.mimeType,
       sizeBytes: BigInt(input.sizeBytes),
       originalKey: "pending",
+      gameStartOffsetMs: input.gameStartOffsetMs ?? null,
+      capturedAt: input.capturedAt ?? null,
+      source: device ? "DESKTOP_CAPTURE" : "MANUAL_UPLOAD",
+      deviceId: device?.id ?? null,
+      clientUploadId: device ? input.clientUploadId ?? null : null,
     },
   });
   const originalKey = `${recordingPrefix(userId, rec.id)}original.${ext}`;
   await prisma.recording.update({ where: { id: rec.id }, data: { originalKey } });
   await storage().truncate(originalKey, 0);
-  return { id: rec.id, chunkSize: env.chunkBytes, receivedBytes: 0 };
+  return { id: rec.id, chunkSize: env.chunkBytes, receivedBytes: 0, status: "UPLOADING" as const };
 }
 
 // Verrou en mémoire par enregistrement : sérialise les écritures concurrentes

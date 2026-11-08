@@ -230,3 +230,44 @@ test("analyse assistée : proposition automatique en brouillon, revue et validat
   await expect(page.locator("[data-testid=evaluation-result]")).toContainText("Précision");
   await expect(page.locator("[data-testid=evaluation-result]")).toContainText("1 correcte(s) · 0 fausse(s) alerte(s) · 0 mort(s) manquée(s)");
 });
+
+test("application PC : appairage, enregistrement d'une partie simulée, envoi automatique", async ({ page }) => {
+  const { Agent } = await import("../../desktop/src/agent");
+  const { CoachApi } = await import("../../desktop/src/api");
+  const { configSchema } = await import("../../desktop/src/config");
+  const { mkdtempSync } = await import("node:fs");
+  const os = await import("node:os");
+
+  await register(page, "Dana");
+  await page.goto("/app/capture");
+  await page.click("[data-testid=pairing-generate]");
+  const code = (await page.locator("[data-testid=pairing-code]").textContent())!.trim();
+
+  const pair = await new CoachApi("http://localhost:3100", null).pair(code, "PC de test", "linux", "0.1.0");
+  const cfg = configSchema.parse({ serverUrl: "http://localhost:3100", deviceToken: pair.token, capture: { backend: "testsrc", fps: 15, maxHeight: 360 } });
+  // Partie simulée : début à 10 s de jeu, mort du joueur à 11,5 s, fin quand le client disparaît.
+  let i = 0;
+  const times = [10, 11, 12, null, null, null];
+  const probe = {
+    gameTime: async () => times[Math.min(i++, times.length - 1)] ?? null,
+    events: async () => [{ name: "ChampionKill", gameTimeMs: 11_500, killer: "Ennemi", victim: "Dana" }],
+    activePlayer: async () => "Dana#EUW",
+  };
+  const agent = new Agent(cfg, { home: mkdtempSync(path.join(os.tmpdir(), "cgg-e2e-agent-")), probe, log: () => {} });
+  await agent.tick(); // début de partie → enregistrement
+  expect(agent.state).toBe("recording");
+  await agent.heartbeat();
+  await page.reload();
+  await expect(page.locator("[data-testid=device-list]")).toContainText("Enregistrement en cours");
+  await new Promise((r) => setTimeout(r, 3000));
+  for (let k = 0; k < 5; k++) await agent.tick(); // fin de partie détectée
+  await agent.processQueue();
+  expect(agent.queue.items[0]!.status).toBe("done");
+
+  await page.reload();
+  await expect(page.getByText("Dernières parties enregistrées")).toBeVisible();
+  await page.locator("section", { hasText: "Dernières parties enregistrées" }).getByRole("link").first().click();
+  await expect(page.locator("[data-testid=coaching-studio]")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("[data-testid=time-display]")).toContainText("jeu"); // synchronisée automatiquement
+  await expect(page.locator("[data-testid=truth-list]")).toContainText("application PC");
+});

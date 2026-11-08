@@ -5,6 +5,8 @@ Ce document **liste des questions**, il ne constitue pas un avis juridique. Chaq
 ## Riot Games
 - Politiques développeurs et conditions de l'API : enregistrement du produit, clé de production, usage autorisé des données, mentions obligatoires (« non approuvé par Riot Games »), règles sur la monétisation.
 - Politique sur les outils tiers : un coaching **après match** est généralement envisageable, mais **n'est pas une approbation**. Vérifier en particulier toute détection d'état de partie par l'application PC.
+- **Application PC** : l'agent lit l'API locale du client (Live Client Data, lecture seule) pour détecter la partie, synchroniser la vidéo et mémoriser les événements, exploités uniquement après le match. Faire confirmer par Riot que cet usage (sans aucun affichage ni conseil en partie) est conforme à leurs règles sur les applications tierces, et que la capture de fenêtre ne pose pas de problème vis-à-vis de Vanguard.
+- **Licences de distribution de l'agent** : FFmpeg (LGPL/GPL selon la build), libx264 (GPL) — choisir la build et les obligations associées avant toute distribution.
 - Riot Sign On : demande d'accès pour vérifier les identités.
 - Utilisation des noms, images de champions, icônes : conditions de la politique « Legal Jibber Jabber » / contenus de fans à vérifier. L'interface actuelle n'utilise aucune image de Riot.
 

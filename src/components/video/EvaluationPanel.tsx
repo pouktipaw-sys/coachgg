@@ -6,12 +6,13 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "@/lib/client";
 import { formatMs } from "@/lib/annotations/coaching";
 
-type Truth = { id: string; videoMs: number; source: "MANUAL" | "RIOT_TIMELINE" };
+type Truth = { id: string; videoMs: number; source: "MANUAL" | "RIOT_TIMELINE" | "LIVE_CLIENT" };
+const SOURCE_LABEL = { RIOT_TIMELINE: "timeline Riot", LIVE_CLIENT: "application PC (client du jeu)", MANUAL: "marquée à la main" } as const;
 type Evaluation =
   | {
       status: "ok";
       version: string;
-      truthSource: "RIOT_TIMELINE" | "MANUAL";
+      truthSource: "RIOT_TIMELINE" | "LIVE_CLIENT" | "MANUAL";
       truthCount: number;
       toleranceMs: number;
       result: { tp: number; fp: number; fn: number; precision: number | null; recall: number | null; f1: number | null; meanOffsetMs: number | null; falsePositives: number[]; missed: number[] };
@@ -102,7 +103,7 @@ export function EvaluationPanel({ recordingId, riotReady }: { recordingId: strin
               {truths.map((t) => (
                 <li key={t.id} className="flex items-center gap-2 rounded bg-panel-2 px-2 py-1">
                   <button className="font-mono underline" onClick={() => seek(t.videoMs)}>{formatMs(t.videoMs)}</button>
-                  <span className="flex-1 text-xs text-muted">{t.source === "RIOT_TIMELINE" ? "timeline Riot" : "marquée à la main"}</span>
+                  <span className="flex-1 text-xs text-muted">{SOURCE_LABEL[t.source]}</span>
                   {t.source === "MANUAL" && (
                     <button className="text-xs text-loss" aria-label="Retirer" onClick={() => run(() => api(`/api/ground-truth/${t.id}`, { method: "DELETE" }))}>✕</button>
                   )}
@@ -134,7 +135,7 @@ export function EvaluationPanel({ recordingId, riotReady }: { recordingId: strin
                 <p className="text-xs">Fausses alertes : {ev.result.falsePositives.map((m) => <button key={m} className="mr-1 font-mono underline" onClick={() => seek(m)}>{formatMs(m)}</button>)}</p>
               )}
               <p className="text-xs text-muted">
-                Règles {ev.version} · référence : {ev.truthSource === "RIOT_TIMELINE" ? "timeline Riot" : "marquage manuel"} ({ev.truthCount}) · tolérance ±{ev.toleranceMs / 1000} s.
+                Règles {ev.version} · référence : {SOURCE_LABEL[ev.truthSource]} ({ev.truthCount}) · tolérance ±{ev.toleranceMs / 1000} s.
                 Une seule vidéo ne suffit pas à juger la qualité générale.
               </p>
             </div>

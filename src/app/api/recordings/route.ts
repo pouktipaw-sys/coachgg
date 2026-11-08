@@ -1,5 +1,5 @@
 import { HttpError } from "@/server/errors";
-import { authed, json, readJson } from "@/server/http";
+import { authed, authedOrDevice, json, readJson } from "@/server/http";
 import { rateLimit } from "@/server/rateLimit";
 import { prisma } from "@/server/db";
 import { visibleRecordingWhere } from "@/server/permissions";
@@ -20,8 +20,9 @@ export const GET = authed(async (_req, user) => {
   return json({ recordings });
 });
 
-export const POST = authed(async (req, user) => {
+// Accessible aussi à l'application PC (jeton d'appareil).
+export const POST = authedOrDevice(async (req, user, _params, device) => {
   if (!rateLimit(`upload-create:${user.id}`, 20, 3600_000))
     throw new HttpError(429, "rate_limited", "Trop d'envois créés récemment.");
-  return json(await createUpload(user.id, await readJson(req)), 201);
+  return json(await createUpload(user.id, await readJson(req), device), 201);
 });

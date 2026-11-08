@@ -78,6 +78,8 @@ export default async function VideosPage({ searchParams }: { searchParams: Promi
                   <p className="text-xs text-muted">
                     {formatDate(r.createdAt)} · {mine ? "Ma vidéo" : `Partagée par ${r.owner.displayName}`}
                     {r.match ? " · liée à un match" : ""}
+                    {r.source === "DESKTOP_CAPTURE" ? " · capture PC" : ""}
+                    {r.gameStartOffsetMs != null ? " · synchronisée" : ""}
                   </p>
                   <p className="text-xs text-muted">
                     {r._count.recommendations} moment(s) · {r._count.annotations} annotation(s)

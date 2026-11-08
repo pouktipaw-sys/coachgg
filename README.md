@@ -27,7 +27,7 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 | Notifications internes | ✅ Opérationnel | Vidéo prête/échec, invitations. |
 | Administration minimale | ✅ Opérationnel | Tâches, relance, signalements. |
 | Analyse vidéo assistée | 🧪 Expérimentale | Python/OpenCV : écran grisé (mort probable), forte activité, marqueurs rouges minimap avant l'événement → propositions **en brouillon à valider**. Précision mesurable (vérité terrain manuelle ou timeline Riot, banc d'essai). Voir [docs/ANALYSIS.md](docs/ANALYSIS.md). |
-| Application PC (capture) | ⏳ Non disponible | Phase 5 — conception dans [docs/DESKTOP.md](docs/DESKTOP.md). |
+| Application PC (capture) | 🧪 Expérimentale | Agent `npm run agent -- start` : appairage par code, détection de partie, enregistrement de la fenêtre du jeu (FFmpeg), synchronisation automatique, découpage, envoi reprenable. Cœur testé sous Linux ; **capture Windows non encore testée sur un vrai PC**. Voir [docs/DESKTOP.md](docs/DESKTOP.md). |
 | Coach conversationnel | ⏳ Non disponible | Phase 6. |
 | Export vidéo annotée, visionnage synchronisé multi-vidéos | ⏳ Non disponible | |
 | Rang (LEAGUE-V4) | ⏳ Non intégré | Affiché « non disponible ». |
@@ -71,6 +71,12 @@ ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -t 20 -c:v libx264 -pix_fmt yu
 ```
 
 Administrateur : `npm run admin:promote -- email@exemple.fr`.
+
+Agent PC (enregistrement automatique, voir [docs/DESKTOP.md](docs/DESKTOP.md)) :
+
+```bash
+npm run agent -- start
+```
 
 ## Tests
 

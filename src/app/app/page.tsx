@@ -39,6 +39,9 @@ export default async function Dashboard() {
     _count: { _all: true },
   });
   const draftCount = drafts.reduce((a, d) => a + d._count._all, 0);
+  const devices = await prisma.device.findMany({ where: { userId: user.id, revokedAt: null }, select: { lastSeenAt: true, status: true } });
+  const online = devices.filter((d) => d.lastSeenAt && Date.now() - d.lastSeenAt.getTime() < 2 * 60_000);
+  const recordingNow = online.some((d) => (d.status as { state?: string } | null)?.state === "recording");
 
   const series = scores
     .map((s) => ({ date: s.participant.match.gameStartAt ?? s.participant.match.createdAt, value: s.overall!, comps: s.components as { key: ComponentKey; score: number | null; available: boolean }[] }))
@@ -177,7 +180,17 @@ export default async function Dashboard() {
         <section className="card lg:col-span-2">
           <h2 className="h2">Enregistrements et analyses</h2>
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
-            <Badge tone="warn">Capture PC : non disponible</Badge>
+            <Link href="/app/capture">
+              {devices.length === 0 ? (
+                <Badge tone="neutral">Capture PC : aucun PC appairé</Badge>
+              ) : recordingNow ? (
+                <Badge tone="info">Capture PC : enregistrement en cours</Badge>
+              ) : online.length ? (
+                <Badge tone="ok">Capture PC : {online.length} PC en ligne</Badge>
+              ) : (
+                <Badge tone="warn">Capture PC : hors ligne</Badge>
+              )}
+            </Link>
             <Badge tone="info">Analyse assistée : expérimentale</Badge>
             {draftCount > 0 && (
               <Link href={`/app/videos/${drafts[0]!.recordingId}`}>

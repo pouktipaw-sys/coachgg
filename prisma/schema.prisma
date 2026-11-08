@@ -50,6 +50,40 @@ model User {
   sharesReceived  SharePermission[]      @relation("ShareGranteeUser")
   notifications   Notification[]
   teamsCreated    Team[]                 @relation("TeamCreator")
+  devices         Device[]
+  pairingCodes    DevicePairingCode[]
+}
+
+// ─────────────────────────── Application PC ───────────────────────────
+// Un PC appairé reçoit un jeton d'appareil (haché en base), limité à l'envoi
+// de vidéos et au signalement de son état. Révocable à tout moment.
+
+model Device {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  platform   String
+  appVersion String
+  tokenHash  String      @unique
+  createdAt  DateTime    @default(now())
+  lastSeenAt DateTime?
+  revokedAt  DateTime?
+  status     Json? // dernier état signalé (capture, file d'envoi, disque)
+  recordings Recording[]
+
+  @@index([userId])
+}
+
+model DevicePairingCode {
+  id        String    @id // sha256 du code
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Session {
@@ -259,7 +293,12 @@ model Recording {
   jobs            AnalysisJob[]
   shares          SharePermission[]
   groundTruth     GroundTruthEvent[]
+  deviceId        String?
+  device          Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  capturedAt      DateTime?
+  clientUploadId  String? // clé d'idempotence fournie par l'appareil
 
+  @@unique([deviceId, clientUploadId])
   @@index([ownerId, createdAt])
   @@index([matchId])
 }
@@ -653,6 +692,7 @@ model Goal {
 enum GroundTruthSource {
   MANUAL // marqué par le propriétaire dans le lecteur
   RIOT_TIMELINE // morts horodatées de la timeline MATCH-V5 (vidéo synchronisée)
+  LIVE_CLIENT // événements enregistrés par l'application PC via l'API locale du client (après match)
 }
 
 model GroundTruthEvent {

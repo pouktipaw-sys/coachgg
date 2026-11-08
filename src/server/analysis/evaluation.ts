@@ -52,7 +52,7 @@ export async function importRiotDeaths(userId: string, recordingId: string, clie
 }
 
 export type RecordingEvaluation =
-  | { status: "ok"; version: string; truthSource: "RIOT_TIMELINE" | "MANUAL"; truthCount: number; toleranceMs: number; result: EvalResult }
+  | { status: "ok"; version: string; truthSource: "RIOT_TIMELINE" | "LIVE_CLIENT" | "MANUAL"; truthCount: number; toleranceMs: number; result: EvalResult }
   | { status: "no_analysis" | "no_truth" | "no_detections_stored"; message: string };
 
 /** Évalue la dernière analyse d'une vidéo. La timeline Riot est prioritaire sur le marquage manuel. */
@@ -65,15 +65,17 @@ export async function evaluateRecording(recordingId: string, toleranceMs = DEFAU
   if (!job) return { status: "no_analysis", message: "Aucune analyse terminée pour cette vidéo." };
   const result = job.result as { version?: string; detections?: Detection[] } | null;
   if (!result?.detections) return { status: "no_detections_stored", message: "Analyse antérieure à l'évaluation : relancez-la pour enregistrer les détections." };
-  const riot = truths.filter((t) => t.source === "RIOT_TIMELINE");
-  const ref = riot.length ? riot : truths.filter((t) => t.source === "MANUAL");
-  if (!ref.length) return { status: "no_truth", message: "Aucune vérité terrain : marquez les morts réelles ou importez-les depuis la timeline Riot." };
+  // Priorité : timeline Riot > événements du client (application PC) > marquage manuel.
+  const order = ["RIOT_TIMELINE", "LIVE_CLIENT", "MANUAL"] as const;
+  const truthSource = order.find((s) => truths.some((t) => t.source === s));
+  const ref = truthSource ? truths.filter((t) => t.source === truthSource) : [];
+  if (!truthSource || !ref.length) return { status: "no_truth", message: "Aucune vérité terrain : marquez les morts réelles ou importez-les depuis la timeline Riot." };
   const r = evaluateDetections(
     result.detections.filter((d) => d.type === "grey_screen"),
     ref.map((t) => ({ videoMs: t.videoMs })),
     { toleranceMs, rangeMs: { from: 0, to: rec.durationMs ?? Number.MAX_SAFE_INTEGER } },
   );
-  return { status: "ok", version: result.version ?? "?", truthSource: riot.length ? "RIOT_TIMELINE" : "MANUAL", truthCount: ref.length, toleranceMs, result: r };
+  return { status: "ok", version: result.version ?? "?", truthSource, truthCount: ref.length, toleranceMs, result: r };
 }
 
 export async function evaluateRecordingForOwner(userId: string, recordingId: string) {

@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { HttpError, unauthorized } from "./errors";
 import { getCurrentUser, type SafeUser } from "./auth/session";
 import { env } from "@/lib/env";
+import { deviceFromAuthHeader, type DeviceContext } from "./devices";
 
 type Ctx<P> = { params: Promise<P> };
 
@@ -50,6 +51,30 @@ export function authed<P = Record<string, string>>(
     const user = await getCurrentUser();
     if (!user) throw unauthorized();
     return fn(req, user, params);
+  });
+}
+
+/**
+ * Session utilisateur OU jeton d'appareil (application PC). Réservé aux routes
+ * d'envoi de vidéo et d'état : un appareil ne peut rien faire d'autre.
+ */
+export function authedOrDevice<P = Record<string, string>>(
+  fn: (req: NextRequest, user: { id: string }, params: P, device: DeviceContext | null) => Promise<Response>,
+) {
+  return handler<P>(async (req, params) => {
+    const device = await deviceFromAuthHeader(req.headers.get("authorization"));
+    if (device) return fn(req, { id: device.userId }, params, device);
+    const user = await getCurrentUser();
+    if (!user) throw unauthorized();
+    return fn(req, user, params, null);
+  });
+}
+
+export function deviceOnly<P = Record<string, string>>(fn: (req: NextRequest, device: DeviceContext, params: P) => Promise<Response>) {
+  return handler<P>(async (req, params) => {
+    const device = await deviceFromAuthHeader(req.headers.get("authorization"));
+    if (!device) throw new HttpError(401, "device_unauthorized", "Jeton d'appareil invalide ou révoqué.");
+    return fn(req, device, params);
   });
 }
 

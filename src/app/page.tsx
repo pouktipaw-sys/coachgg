@@ -73,7 +73,7 @@ export default async function Home() {
           <li>✅ Groupes, invitations, MVP entre amis</li>
           <li>🧪 Import Riot (Match-V5) : nécessite une clé API côté serveur</li>
           <li>🧪 Analyse vidéo assistée : propositions automatiques à valider (expérimental)</li>
-          <li>⏳ Application PC d&apos;enregistrement : en conception</li>
+          <li>🧪 Application PC : enregistrement automatique (agent expérimental, capture Windows à valider)</li>
         </ul>
         <p className="mt-4 text-xs text-muted">
           CoachGG n&apos;est ni approuvé ni sponsorisé par Riot Games. League of Legends est une marque de Riot Games, Inc.
