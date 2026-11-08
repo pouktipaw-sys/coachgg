@@ -20,7 +20,6 @@ export default defineConfig({
           globalSetup: ["tests/integration/globalSetup.ts"],
           setupFiles: ["tests/integration/setup.ts"],
           // Une seule base de test partagée : exécution séquentielle des fichiers.
-          fileParallelism: false,
           pool: "forks",
           poolOptions: { forks: { singleFork: true } },
           testTimeout: 60_000,
