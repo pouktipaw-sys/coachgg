@@ -258,6 +258,7 @@ model Recording {
   observations    Observation[]
   jobs            AnalysisJob[]
   shares          SharePermission[]
+  groundTruth     GroundTruthEvent[]
 
   @@index([ownerId, createdAt])
   @@index([matchId])
@@ -643,6 +644,28 @@ model Goal {
   status           GoalStatus @default(ACTIVE)
   review           String?
   createdAt        DateTime   @default(now())
+}
+
+// ─────────────────── Vérité terrain (évaluation de l'analyse) ───────────────────
+// Événements RÉELS d'une vidéo, servant uniquement à mesurer la précision de
+// l'analyse automatique. Jamais affichés comme des analyses.
+
+enum GroundTruthSource {
+  MANUAL // marqué par le propriétaire dans le lecteur
+  RIOT_TIMELINE // morts horodatées de la timeline MATCH-V5 (vidéo synchronisée)
+}
+
+model GroundTruthEvent {
+  id          String            @id @default(cuid())
+  recordingId String
+  recording   Recording         @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  type        String            @default("DEATH")
+  videoMs     Int
+  source      GroundTruthSource
+  createdById String?
+  createdAt   DateTime          @default(now())
+
+  @@index([recordingId, type])
 }
 
 model Notification {

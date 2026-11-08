@@ -26,7 +26,7 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 | Objectifs individuels et collectifs | ✅ Opérationnel | Bilan mesuré sur les notes réelles de la période. |
 | Notifications internes | ✅ Opérationnel | Vidéo prête/échec, invitations. |
 | Administration minimale | ✅ Opérationnel | Tâches, relance, signalements. |
-| Analyse vidéo assistée | 🧪 Expérimentale | Python/OpenCV : écran grisé (mort probable), forte activité, marqueurs rouges minimap avant l'événement → propositions **en brouillon à valider**. Voir [docs/ANALYSIS.md](docs/ANALYSIS.md). |
+| Analyse vidéo assistée | 🧪 Expérimentale | Python/OpenCV : écran grisé (mort probable), forte activité, marqueurs rouges minimap avant l'événement → propositions **en brouillon à valider**. Précision mesurable (vérité terrain manuelle ou timeline Riot, banc d'essai). Voir [docs/ANALYSIS.md](docs/ANALYSIS.md). |
 | Application PC (capture) | ⏳ Non disponible | Phase 5 — conception dans [docs/DESKTOP.md](docs/DESKTOP.md). |
 | Coach conversationnel | ⏳ Non disponible | Phase 6. |
 | Export vidéo annotée, visionnage synchronisé multi-vidéos | ⏳ Non disponible | |
@@ -79,6 +79,7 @@ Administrateur : `npm run admin:promote -- email@exemple.fr`.
 | `npm run test:unit` | Logique pure : schéma d'annotations, géométrie (letterbox, redimensionnement), parcours pédagogique, formats, notation, MVP. |
 | `npm run test:integration` | PostgreSQL + **FFmpeg réels** : pipeline vidéo (MP4, WEBM, corrompu, reprise d'envoi), file de tâches, permissions (utilisateurs, groupes, retrait de partage, départ), auth, matchs, MVP, égalité, Riot simulé, export/suppression. Base `coachgg_test` (doit contenir « test »). |
 | `npm run test:analysis` | Tests Python de l'analyseur (fonctions de détection). |
+| `npm run benchmark:analysis -- <dossier>` | Banc d'essai hors ligne sur des vidéos étiquetées (`labels.json`) : précision, rappel, décalage. |
 | `npm run test:e2e` | Playwright, serveur + worker réels, base `coachgg_e2e` : import réel → moment → annotation → ralenti → pause → seek → redimensionnement → plein écran → persistance ; fichier invalide ; groupe → invitation → match commun → MVP. |
 
 ```bash

@@ -35,6 +35,24 @@ Garde-fous codés et testés : aucune mesure postérieure à l'événement n'est
 - Valider → moment publié (« automatique, validée », « et corrigée » si modifié). Rejeter → masqué avec ses annotations, conservé pour la mesure.
 - Administration : taux de validation par version de règles = validées / (validées + rejetées).
 
+## Mesurer la précision
+La précision sur de vraies parties doit être **mesurée**, pas supposée. Trois outils :
+
+1. **Dans l'application** (page d'une vidéo, panneau « Mesurer la précision ») :
+   - *Vérité terrain manuelle* : mettre la vidéo en pause à l'instant d'une mort réelle, puis « Marquer une mort ».
+   - *Vérité terrain Riot* : « Importer les morts (timeline Riot) » — morts du joueur issues de MATCH-V5 `/timeline` (`CHAMPION_KILL` dont il est la victime), converties en temps vidéo. Conditions : clé API, vidéo liée à un match importé de Riot, vidéo synchronisée (onglet « Synchro »). Prioritaire sur le marquage manuel.
+   - Résultat : précision (détections correctes / détections), rappel (morts retrouvées / morts réelles), F1, décalage moyen, liste cliquable des morts manquées et des fausses alertes.
+2. **Administration** : agrégat par version de règles (somme des vrais/faux positifs sur toutes les vidéos étiquetées), sans accès au contenu des vidéos.
+3. **Banc d'essai hors ligne**, sans base ni réseau :
+   ```bash
+   npm run benchmark:analysis -- ./mon-jeu-de-test --out rapport.json
+   ```
+   Le dossier contient les vidéos et `labels.json` (`{"partie.mp4": {"deaths": ["3:12", 701.5], "minimap": {"x":0.81,"y":0.69,"w":0.19,"h":0.31}}}`, temps vidéo).
+
+Règles d'appariement : une détection « écran grisé » est correcte si elle commence à ±2,5 s d'une mort réelle ; appariement un pour un (deux détections pour une mort = 1 correcte + 1 fausse alerte). Les détections brutes de chaque analyse sont conservées (`AnalysisJob.result.detections`) ; les analyses antérieures doivent être relancées.
+
+Protocole recommandé avant de sortir du statut expérimental : au moins 20 parties complètes, de rôles et résolutions variés, étiquetées par la timeline Riot si possible ; publier version des règles, nombre de vidéos, précision, rappel. Recueillir le consentement des joueurs dont les vidéos composent le jeu de test.
+
 ## Limites connues
 - Précision sur de **vraies parties : non mesurée**. Tests réalisés sur une vidéo de synthèse contrôlée. La revue humaine sert de mesure de terrain.
 - L'écran grisé peut avoir d'autres causes (effets, menus). Le mouvement ne distingue pas un combat d'un déplacement de caméra. Les marqueurs rouges peuvent être des signaux ou des structures.

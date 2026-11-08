@@ -5,6 +5,7 @@ import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
 import { integrationStatus } from "@/lib/env";
 import { automaticPrecision } from "@/server/analysis/review";
+import { evaluationSummary } from "@/server/analysis/evaluation";
 
 export const metadata = { title: "Administration" };
 
@@ -26,7 +27,7 @@ export default async function AdminPage() {
     }),
   ]);
   const integ = integrationStatus();
-  const precision = await automaticPrecision();
+  const [precision, evaluation] = await Promise.all([automaticPrecision(), evaluationSummary()]);
   return (
     <div className="space-y-6">
       <PageHeader title="Administration" />
@@ -57,6 +58,26 @@ export default async function AdminPage() {
           </table>
         )}
         <p className="mt-2 text-xs text-muted">Taux = validées / (validées + rejetées). Mesure de terrain de la qualité des règles, par version.</p>
+        <h3 className="mt-4 font-medium">Détection des morts contre la vérité terrain</h3>
+        {evaluation.length === 0 ? (
+          <p className="mt-1 text-sm text-muted">Aucune vidéo avec vérité terrain et analyse enregistrée.</p>
+        ) : (
+          <table className="mt-2 w-full text-sm" data-testid="eval-summary">
+            <thead className="text-left text-xs text-muted"><tr><th>Version</th><th>Vidéos</th><th>VP</th><th>FP</th><th>FN</th><th>Précision</th><th>Rappel</th><th>F1</th><th>Décalage</th></tr></thead>
+            <tbody>
+              {evaluation.map((e) => (
+                <tr key={e.version}>
+                  <td className="py-1 font-mono">{e.version}</td><td>{e.videos}</td><td>{e.tp}</td><td>{e.fp}</td><td>{e.fn}</td>
+                  <td>{e.precision == null ? "—" : `${Math.round(e.precision * 100)} %`}</td>
+                  <td>{e.recall == null ? "—" : `${Math.round(e.recall * 100)} %`}</td>
+                  <td>{e.f1 == null ? "—" : `${Math.round(e.f1 * 100)} %`}</td>
+                  <td>{e.meanOffsetMs == null ? "—" : `${(e.meanOffsetMs / 1000).toFixed(1)} s`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="mt-1 text-xs text-muted">Comptes agrégés (somme des vrais/faux positifs), sans accès au contenu des vidéos.</p>
       </section>
       <section className="card overflow-x-auto">
         <h2 className="h2">Dernières tâches</h2>

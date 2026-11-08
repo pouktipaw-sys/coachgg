@@ -221,4 +221,12 @@ test("analyse assistée : proposition automatique en brouillon, revue et validat
   await expect(page.locator("[data-testid=moment-card]")).toContainText("pas forcément une erreur");
   await page.locator("[data-testid=review-box]").getByRole("button", { name: "Valider" }).click();
   await expect(page.locator("[data-testid=auto-badge]")).toContainText("validée");
+
+  // Mesure de la précision : marquer la mort réelle à 0:13 puis lire le résultat.
+  await expect(page.locator("[data-testid=evaluation-result]")).toContainText("Aucune vérité terrain");
+  await seekTo(page, 13);
+  await page.click("[data-testid=mark-death]");
+  await expect(page.locator("[data-testid=truth-list]")).toContainText("0:13");
+  await expect(page.locator("[data-testid=evaluation-result]")).toContainText("Précision");
+  await expect(page.locator("[data-testid=evaluation-result]")).toContainText("1 correcte(s) · 0 fausse(s) alerte(s) · 0 mort(s) manquée(s)");
 });

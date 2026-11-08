@@ -131,7 +131,9 @@ describe.skipIf(!available)("analyse vidéo assistée (Python/OpenCV réels)", (
       expect(job.attempts).toBe(1); // erreur de configuration : pas de nouvelle tentative inutile
       expect((await prisma.recording.findUniqueOrThrow({ where: { id } })).status).toBe("READY");
     } finally {
-      process.env.ANALYSIS_PYTHON = prev;
+      // process.env convertit undefined en chaîne "undefined" : il faut supprimer la clé.
+      if (prev === undefined) delete process.env.ANALYSIS_PYTHON;
+      else process.env.ANALYSIS_PYTHON = prev;
       resetAnalyzerAvailability();
     }
   });

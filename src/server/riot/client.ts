@@ -89,7 +89,18 @@ export class RiotClient {
     const platform = matchId.split("_")[0] ?? "EUW1";
     return this.get<RiotMatch>(`https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/${encodeURIComponent(matchId)}`);
   }
+
+  /** MATCH-V5 timeline : événements horodatés (ms depuis le début de la partie). */
+  timeline(matchId: string) {
+    const platform = matchId.split("_")[0] ?? "EUW1";
+    return this.get<RiotTimeline>(`https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/${encodeURIComponent(matchId)}/timeline`);
+  }
 }
+
+export type RiotTimeline = {
+  metadata: { matchId: string; participants: string[] };
+  info: { frames: { timestamp: number; events: { type: string; timestamp: number; victimId?: number; killerId?: number }[] }[] };
+};
 
 export function riotClient(fetcher?: FetchLike): RiotClient {
   const key = env.riotApiKey;

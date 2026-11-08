@@ -204,7 +204,12 @@ export async function analyzeRecording(job: AnalysisJob) {
       body: created > 0 ? `« ${rec.title} » : ${created} proposition(s) à valider.` : `« ${rec.title} » : aucune séquence détectée.`,
       link: `/app/videos/${rec.id}`,
     });
-    return { status, result: { version: RULES_VERSION, contextSec, steps, created, warnings: out.warnings, baselines: out.baselines, sampling: out.sampling } };
+    // Détections brutes conservées (sans les planches) : base de l'évaluation de précision.
+    const detections = out.events.map((e) => ({ type: e.type, startMs: e.startMs, endMs: e.endMs, confidence: e.confidence }));
+    return {
+      status,
+      result: { version: RULES_VERSION, contextSec, steps, created, warnings: out.warnings, baselines: out.baselines, sampling: out.sampling, detections },
+    };
   } catch (e) {
     // Trace des étapes conservée même en cas d'échec.
     await prisma.analysisJob.update({ where: { id: job.id }, data: { result: { version: RULES_VERSION, contextSec, steps } } }).catch(() => {});

@@ -10,7 +10,7 @@
 | 6 | Progression, objectifs, coach conversationnel, débrief collectif | 🟡 Partiel : objectifs individuels/collectifs + bilan, rapport collectif déterministe. Coach conversationnel à faire. |
 
 ## Prochaines étapes proposées
-1. **Phase 4 — suite** : mesurer la précision sur de vraies parties (jeu de vidéos annotées, avec consentement) ; détection automatique de la zone minimap ; distinguer combat / mouvement de caméra ; croiser avec la timeline MATCH-V5 (morts horodatées) quand une clé Riot est disponible.
+1. **Phase 4 — suite** : outils de mesure livrés (vérité terrain manuelle/Riot, évaluation, banc d'essai). Reste à **constituer un jeu de ≥ 20 vraies parties étiquetées** et publier les chiffres ; détection automatique de la zone minimap ; distinguer combat / mouvement de caméra ; croiser avec la timeline MATCH-V5 (morts horodatées) quand une clé Riot est disponible.
 2. Clips : bibliothèque de clips (favoris, notes personnelles) à partir des moments ; export vidéo annoté (rendu FFmpeg de l'overlay).
 3. Import Riot : timeline MATCH-V5 (évolution or/CS, objectifs horodatés) pour la synchronisation vidéo ↔ événements ; LEAGUE-V4 pour le rang.
 4. Coach conversationnel : réponses à partir des données autorisées (mêmes contrôles d'accès), citations de matchs/clips/horodatages, « information manquante » explicite.

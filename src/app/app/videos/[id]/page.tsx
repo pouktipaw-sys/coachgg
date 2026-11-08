@@ -4,6 +4,8 @@ import { CoachingStudio } from "@/components/video/CoachingStudio";
 import { RecordingStatusPanel } from "@/components/video/RecordingStatusPanel";
 import { RecordingSettings } from "@/components/video/RecordingSettings";
 import { AnalysisPanel, type AnalysisJobDTO } from "@/components/video/AnalysisPanel";
+import { EvaluationPanel } from "@/components/video/EvaluationPanel";
+import { integrationStatus } from "@/lib/env";
 import { Badge, PageHeader, RECORDING_STATUS } from "@/components/ui";
 import type { AnnotationDTO, RecommendationDTO, RecordingDTO } from "@/components/video/types";
 import { requirePageUser } from "@/server/auth/page";
@@ -73,6 +75,23 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
       {isOwner && rec.status === "READY" && (
         <div className="mt-6">
           <AnalysisPanel recordingId={rec.id} initial={toPlain<AnalysisJobDTO>(analysisJob)} />
+        </div>
+      )}
+      {isOwner && rec.status === "READY" && (
+        <div className="mt-6">
+          <EvaluationPanel
+            key={`eval-${analysisJob?.status ?? "none"}-${analysisJob?.finishedAt?.getTime() ?? 0}`}
+            recordingId={rec.id}
+            riotReady={
+              integrationStatus().riotApi !== "configured"
+                ? { ok: false, reason: "clé API Riot non configurée sur le serveur." }
+                : rec.match?.source !== "RIOT_API"
+                  ? { ok: false, reason: "vidéo non liée à un match importé via l'API Riot." }
+                  : rec.gameStartOffsetMs == null
+                    ? { ok: false, reason: "vidéo non synchronisée avec l'horloge du jeu (onglet « Synchro »)." }
+                    : { ok: true }
+            }
+          />
         </div>
       )}
       {isOwner && (

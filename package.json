@@ -18,7 +18,8 @@
     "test:e2e": "playwright test --trace off",
     "dev:all": "node scripts/dev.mjs",
     "admin:promote": "tsx scripts/promote-admin.ts",
-    "test:analysis": ".venv-analysis/bin/python -m unittest discover -s analysis"
+    "test:analysis": ".venv-analysis/bin/python -m unittest discover -s analysis",
+    "benchmark:analysis": "tsx scripts/benchmark-analysis.ts"
   },
   "engines": {
     "node": ">=20"
