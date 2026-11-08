@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+storage/
+test-results/
+playwright-report/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.env
+.env.local
+.env.*.local
+tests/fixtures/generated/

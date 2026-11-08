@@ -1,0 +1,652 @@
+// CoachGG — modèle de données
+// Domaines séparés : comptes · identités de jeu · matchs/stats · vidéo · analyses
+// · scores · équipes · partages/permissions · objectifs · notifications · jobs.
+//
+// Règle : toute donnée de démonstration porte isDemo = true et n'est jamais
+// mélangée aux calculs réels (scores, MVP, progression).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Comptes ─────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String
+  role         UserRole  @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions        Session[]
+  resetTokens     PasswordResetToken[]
+  profile         PlayerProfile?
+  gameIdentities  GameIdentity[]
+  recordings      Recording[]
+  clips           Clip[]
+  recommendations Recommendation[]       @relation("RecommendationAuthor")
+  annotations     VideoAnnotation[]      @relation("AnnotationAuthor")
+  observations    Observation[]          @relation("ObservationAuthor")
+  memberships     TeamMembership[]
+  invitationsSent TeamInvitation[]       @relation("InvitationInviter")
+  invitationsRecv TeamInvitation[]       @relation("InvitationInvitee")
+  participants    MatchParticipant[]
+  matchesCreated  Match[]                @relation("MatchCreator")
+  goals           Goal[]
+  feedback        AnalysisFeedback[]
+  sharesGranted   SharePermission[]      @relation("ShareGrantor")
+  sharesReceived  SharePermission[]      @relation("ShareGranteeUser")
+  notifications   Notification[]
+  teamsCreated    Team[]                 @relation("TeamCreator")
+}
+
+model Session {
+  id        String   @id // sha256 du jeton (le jeton brut n'est jamais stocké)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id // sha256 du jeton
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────── Identité de jeu & profil ───────────────────────
+
+enum IdentityVerification {
+  DECLARED // saisi par l'utilisateur, non prouvé (pas de RSO)
+  VERIFIED_RSO // prouvé via Riot Sign On (nécessite une app Riot approuvée)
+}
+
+model GameIdentity {
+  id           String               @id @default(cuid())
+  userId       String
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String               @default("riot")
+  gameName     String
+  tagLine      String
+  platform     String // ex. EUW1, NA1, KR
+  puuid        String?
+  verification IdentityVerification @default(DECLARED)
+  isPrimary    Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+
+  @@unique([userId, provider, gameName, tagLine])
+  @@index([gameName, tagLine])
+  @@index([puuid])
+}
+
+enum ExplanationLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LolRole {
+  TOP
+  JUNGLE
+  MIDDLE
+  BOTTOM
+  UTILITY
+}
+
+model PlayerProfile {
+  id                    String           @id @default(cuid())
+  userId                String           @unique
+  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  primaryRole           LolRole?
+  secondaryRole         LolRole?
+  favoriteChampions     String[]
+  progressGoal          String?
+  explanationLevel      ExplanationLevel @default(INTERMEDIATE)
+  explanationDensity    String           @default("normal") // concise | normal | detailed
+  language              String           @default("fr")
+  // Confidentialité (par défaut : tout privé)
+  defaultVideoPrivate   Boolean          @default(true)
+  shareStatsWithTeams   Boolean          @default(true)
+  retentionDays         Int? // null = conserver jusqu'à suppression manuelle
+  onboardingCompletedAt DateTime?
+  updatedAt             DateTime         @updatedAt
+}
+
+// ─────────────────────────── Matchs & stats ───────────────────────────
+
+enum MatchSource {
+  MANUAL // statistiques saisies par un utilisateur
+  RIOT_API // importé via l'API officielle Riot (Match-V5)
+  DEMO // données de démonstration, jamais utilisées comme réelles
+}
+
+model Match {
+  id           String      @id @default(cuid())
+  source       MatchSource
+  isDemo       Boolean     @default(false)
+  riotMatchId  String?     @unique
+  platform     String?
+  queueId      Int?
+  gameMode     String? // ex. RANKED_SOLO, RANKED_FLEX, NORMAL, ARAM, CUSTOM
+  gameStartAt  DateTime?
+  durationSec  Int
+  gameVersion  String?
+  createdById  String?
+  createdBy    User?       @relation("MatchCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  // Équipes : totaux nécessaires aux ratios (participation, parts de dégâts)
+  teamStats    Json? // { "100": { kills, dragons, barons, towers, ... }, "200": {...} }
+
+  participants MatchParticipant[]
+  recordings   Recording[]
+  teamReports  TeamMatchReport[]
+  observations Observation[]
+
+  @@index([createdById])
+}
+
+model MatchParticipant {
+  id           String           @id @default(cuid())
+  matchId      String
+  match        Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId       String? // lien vers un compte CoachGG (via identité de jeu)
+  user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  puuid        String?
+  riotGameName String?
+  riotTagLine  String?
+  championName String
+  role         LolRole?
+  teamSide     Int // 100 (bleu) | 200 (rouge)
+  win          Boolean
+  createdAt    DateTime         @default(now())
+
+  statistics MatchStatistics?
+  scores     PerformanceScore[]
+
+  @@index([matchId])
+  @@index([userId])
+}
+
+model MatchStatistics {
+  id                 String           @id @default(cuid())
+  participantId      String           @unique
+  participant        MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  kills              Int
+  deaths             Int
+  assists            Int
+  // Champs optionnels : null = donnée non disponible (jamais 0 par défaut)
+  creepScore         Int? // minions + monstres neutres
+  goldEarned         Int?
+  damageToChampions  Int?
+  damageToObjectives Int?
+  visionScore        Int?
+  wardsPlaced        Int?
+  wardsKilled        Int?
+  controlWardsBought Int?
+  objectivesTakedowns Int? // dragons + hérauts + nashors + tours auxquels le joueur a participé (si connu)
+  items              Int[] // IDs d'objets finaux (si disponibles)
+  timeline           Json? // évolution (or/cs par minute) si disponible
+}
+
+// ───────────────────────────── Vidéo ─────────────────────────────
+
+enum RecordingStatus {
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum RecordingSource {
+  MANUAL_UPLOAD
+  DESKTOP_CAPTURE
+}
+
+model Recording {
+  id               String          @id @default(cuid())
+  ownerId          String
+  owner            User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  matchId          String?
+  match            Match?          @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  source           RecordingSource @default(MANUAL_UPLOAD)
+  status           RecordingStatus @default(UPLOADING)
+  title            String
+  originalFilename String
+  declaredMime     String
+  sizeBytes        BigInt
+  receivedBytes    BigInt          @default(0)
+  originalKey      String // clé de stockage du fichier envoyé
+  playbackKey      String? // MP4 H.264 « faststart » prêt à lire
+  thumbnailKey     String?
+  durationMs       Int?
+  width            Int?
+  height           Int?
+  fps              Float?
+  videoCodec       String?
+  // Synchronisation : temps vidéo (ms) correspondant à 00:00 en jeu
+  gameStartOffsetMs Int?
+  // Zone de la minimap dans l'image, coordonnées normalisées {x,y,w,h} ∈ [0,1]
+  minimapRegion    Json?
+  errorMessage     String?
+  isDemo           Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  clips           Clip[]
+  recommendations Recommendation[]
+  annotations     VideoAnnotation[]
+  observations    Observation[]
+  jobs            AnalysisJob[]
+  shares          SharePermission[]
+
+  @@index([ownerId, createdAt])
+  @@index([matchId])
+}
+
+enum MomentKind {
+  MISTAKE // décision à revoir
+  GOOD_ACTION // bonne action
+  OBJECTIVE
+  FIGHT // engagement
+  MISSED_OPPORTUNITY
+  INTERESTING // situation intéressante sans mort
+}
+
+enum Provenance {
+  MANUAL
+  AUTOMATIC
+}
+
+model Clip {
+  id           String     @id @default(cuid())
+  recordingId  String
+  recording    Recording  @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  ownerId      String
+  owner        User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title        String
+  kind         MomentKind
+  startMs      Int
+  endMs        Int
+  favorite     Boolean    @default(false)
+  personalNote String?
+  provenance   Provenance @default(MANUAL)
+  createdAt    DateTime   @default(now())
+
+  recommendations Recommendation[]
+
+  @@index([recordingId])
+}
+
+// ─────────────────────────── Analyses ───────────────────────────
+
+enum JobType {
+  PROCESS_RECORDING // validation ffprobe + transcodage + miniature
+  ANALYZE_RECORDING // analyse vidéo assistée (phase 4)
+  COMPUTE_SCORES
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  NEEDS_REVIEW
+  CANCELLED
+}
+
+model AnalysisJob {
+  id              String     @id @default(cuid())
+  type            JobType
+  status          JobStatus  @default(PENDING)
+  idempotencyKey  String     @unique
+  recordingId     String?
+  recording       Recording? @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  matchId         String?
+  version         String     @default("1")
+  payload         Json?
+  result          Json?
+  attempts        Int        @default(0)
+  maxAttempts     Int        @default(3)
+  runAfter        DateTime   @default(now())
+  lockedAt        DateTime?
+  lockedBy        String?
+  cancelRequested Boolean    @default(false)
+  progress        Int        @default(0) // 0..100
+  error           String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  processingMs    Int?
+  costMicros      Int        @default(0) // coût externe estimé (API/LLM), 0 si local
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  observations Observation[]
+
+  @@index([status, runAfter])
+  @@index([recordingId])
+}
+
+enum Confidence {
+  LOW
+  MEDIUM
+  HIGH
+  INCONCLUSIVE // « le contexte ne permet pas de conclure »
+}
+
+enum AnalysisCategory {
+  POSITIONING // placement
+  MOVEMENT // déplacements
+  ENGAGEMENT // engagement / désengagement
+  ALLY_SUPPORT
+  RESOURCES
+  ABILITIES
+  VISION
+  ROTATIONS
+  OBJECTIVES
+  COORDINATION
+}
+
+model Observation {
+  id            String           @id @default(cuid())
+  recordingId   String?
+  recording     Recording?       @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  matchId       String?
+  match         Match?           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  analysisJobId String?
+  analysisJob   AnalysisJob?     @relation(fields: [analysisJobId], references: [id], onDelete: SetNull)
+  timeMs        Int? // horodatage vidéo
+  category      AnalysisCategory?
+  text          String
+  source        String // "video" | "match_data"
+  provenance    Provenance
+  authorId      String?
+  author        User?            @relation("ObservationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  analysisVersion String         @default("manual-1")
+  createdAt     DateTime         @default(now())
+
+  @@index([recommendationId])
+  @@index([recordingId])
+}
+
+enum RecommendationStatus {
+  DRAFT
+  PUBLISHED
+  DISPUTED // signalée comme incorrecte
+}
+
+// Un « moment de coaching » : décision analysée à un instant précis de la vidéo.
+model Recommendation {
+  id               String               @id @default(cuid())
+  recordingId      String
+  recording        Recording            @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  clipId           String?
+  clip             Clip?                @relation(fields: [clipId], references: [id], onDelete: SetNull)
+  authorId         String?
+  author           User?                @relation("RecommendationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  kind             MomentKind
+  category         AnalysisCategory
+  title            String
+  // Fenêtre pédagogique
+  contextStartMs   Int // début du contexte examiné (avant l'action)
+  slowdownStartMs  Int // début du ralenti
+  decisionMs       Int // pause : instant où une autre décision était possible
+  endMs            Int // fin de la séquence
+  slowdownRate     Float                @default(0.5)
+  interpretation   String
+  alternatives     Json // [{ label, conditions, limits }]
+  confidence       Confidence
+  confidenceReason String
+  advice           String
+  provenance       Provenance           @default(MANUAL)
+  analysisVersion  String               @default("manual-1")
+  status           RecommendationStatus @default(PUBLISHED)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  observations Observation[]
+  annotations  VideoAnnotation[]
+  feedback     AnalysisFeedback[]
+
+  @@index([recordingId, decisionMs])
+}
+
+enum CoordinateSpace {
+  FRAME // coordonnées normalisées dans l'image vidéo (espace écran, pas le monde 3D)
+  MINIMAP // coordonnées normalisées dans la zone minimap de la vidéo
+}
+
+model VideoAnnotation {
+  id               String          @id @default(cuid())
+  recordingId      String
+  recording        Recording       @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+  type             String // path | arrow | zone | marker | highlight | click | text
+  startMs          Int
+  endMs            Int
+  space            CoordinateSpace @default(FRAME)
+  geometry         Json // validé par src/lib/annotations/schema.ts
+  style            String // actual | alternative | danger | ally | enemy | neutral
+  label            String?
+  provenance       Provenance      @default(MANUAL)
+  schemaVersion    Int             @default(1)
+  authorId         String?
+  author           User?           @relation("AnnotationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([recordingId, startMs])
+}
+
+enum FeedbackKind {
+  INCORRECT
+  UNCLEAR
+  HELPFUL
+  CORRECTION
+}
+
+model AnalysisFeedback {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendationId String?
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  scoreId          String?
+  kind             FeedbackKind
+  comment          String?
+  resolvedAt       DateTime?
+  createdAt        DateTime        @default(now())
+}
+
+// ─────────────────────────── Scores ───────────────────────────
+
+model ScoreVersion {
+  id           String   @id // ex. "perf-1.0.0"
+  description  String
+  config       Json // pondérations et repères, figés pour cette version
+  experimental Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  scores  PerformanceScore[]
+  reports TeamMatchReport[]
+}
+
+model PerformanceScore {
+  id             String           @id @default(cuid())
+  participantId  String
+  participant    MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  scoreVersionId String
+  scoreVersion   ScoreVersion     @relation(fields: [scoreVersionId], references: [id])
+  overall        Float? // null si données insuffisantes
+  components     Json
+  positives      Json
+  negatives      Json
+  missingData    Json
+  reliability    String // high | medium | low | insufficient
+  computedAt     DateTime         @default(now())
+
+  @@unique([participantId, scoreVersionId])
+}
+
+// ─────────────────────────── Équipes ───────────────────────────
+
+enum TeamRole {
+  ADMIN
+  MEMBER
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  createdById String?
+  createdBy   User?    @relation("TeamCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  memberships TeamMembership[]
+  invitations TeamInvitation[]
+  reports     TeamMatchReport[]
+  shares      SharePermission[]
+  goals       Goal[]
+}
+
+model TeamMembership {
+  id       String   @id @default(cuid())
+  teamId   String
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+
+model TeamInvitation {
+  id          String           @id @default(cuid())
+  teamId      String
+  team        Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  inviterId   String
+  inviter     User             @relation("InvitationInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  inviteeId   String
+  invitee     User             @relation("InvitationInvitee", fields: [inviteeId], references: [id], onDelete: Cascade)
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+  expiresAt   DateTime
+
+  @@index([inviteeId, status])
+  @@index([teamId])
+}
+
+model TeamMatchReport {
+  id             String       @id @default(cuid())
+  teamId         String
+  team           Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  matchId        String
+  match          Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  scoreVersionId String
+  scoreVersion   ScoreVersion @relation(fields: [scoreVersionId], references: [id])
+  presentUserIds String[]
+  mvpUserIds     String[] // plusieurs en cas d'égalité
+  isTie          Boolean      @default(false)
+  explanation    Json
+  distinctions   Json
+  computedAt     DateTime     @default(now())
+
+  @@unique([teamId, matchId, scoreVersionId])
+}
+
+// ──────────────────────── Partages & permissions ────────────────────────
+// L'appartenance à un groupe ne donne JAMAIS accès aux vidéos privées :
+// il faut un partage explicite (vers un utilisateur ou un groupe).
+
+model SharePermission {
+  id            String    @id @default(cuid())
+  recordingId   String
+  recording     Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  grantedById   String
+  grantedBy     User      @relation("ShareGrantor", fields: [grantedById], references: [id], onDelete: Cascade)
+  granteeUserId String?
+  granteeUser   User?     @relation("ShareGranteeUser", fields: [granteeUserId], references: [id], onDelete: Cascade)
+  granteeTeamId String?
+  granteeTeam   Team?     @relation(fields: [granteeTeamId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  @@index([recordingId])
+  @@index([granteeUserId])
+  @@index([granteeTeamId])
+}
+
+// ─────────────────────── Objectifs & notifications ───────────────────────
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  ABANDONED
+  EXPIRED
+}
+
+model Goal {
+  id               String     @id @default(cuid())
+  ownerId          String?
+  owner            User?      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  teamId           String?
+  team             Team?      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  title            String
+  reason           String?
+  expectedBehavior String?
+  metric           Json? // { key: "deathsPer10", comparator: "lte", target: 0.5 }
+  periodStart      DateTime   @default(now())
+  periodEnd        DateTime?
+  status           GoalStatus @default(ACTIVE)
+  review           String?
+  createdAt        DateTime   @default(now())
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}

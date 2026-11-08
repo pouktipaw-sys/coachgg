@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0d14;
+  --color-panel: #111622;
+  --color-panel-2: #171d2b;
+  --color-line: #232b3b;
+  --color-muted: #8b95a8;
+  --color-text: #e6e9ef;
+  --color-accent: #4c9dff;
+  --color-accent-2: #7cc4ff;
+  --color-win: #34d399;
+  --color-loss: #f87171;
+  --color-warn: #fbbf24;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-2);
+  outline-offset: 2px;
+}
+
+@utility card {
+    @apply rounded-xl border border-line bg-panel p-5;
+  }
+@utility btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+@utility btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent/85;
+  }
+@utility btn-ghost {
+    @apply btn border border-line bg-panel-2 text-text hover:border-accent/60;
+  }
+@utility btn-danger {
+    @apply btn border border-loss/40 bg-loss/10 text-loss hover:bg-loss/20;
+  }
+@utility input {
+    @apply w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-text placeholder:text-muted/70 focus:border-accent focus:outline-none;
+  }
+@utility label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-muted;
+  }
+@utility badge {
+    @apply inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium;
+  }
+@utility h1 {
+    @apply text-2xl font-semibold tracking-tight;
+  }
+@utility h2 {
+    @apply text-lg font-semibold;
+  }
+
+/* Animations discrètes, désactivées si l'utilisateur le demande */
+@keyframes ripple {
+  from { transform: scale(0.4); opacity: 0.9; }
+  to { transform: scale(1.6); opacity: 0; }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.anim-ripple { animation: ripple 1.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.anim-pulse { animation: pulse-soft 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-ripple, .anim-pulse { animation: none; }
+}
