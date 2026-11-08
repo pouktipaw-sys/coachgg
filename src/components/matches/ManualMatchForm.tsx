@@ -39,6 +39,17 @@ const emptyRow = (isMe: boolean, side: 100 | 200 = 100, id?: { gameName: string;
   visionScore: "",
 });
 
+const STAT_FIELDS = [
+  ["kills", "Éliminations"],
+  ["deaths", "Morts"],
+  ["assists", "Assistances"],
+  ["creepScore", "CS"],
+  ["goldEarned", "Or"],
+  ["damageToChampions", "Dégâts aux champions"],
+  ["damageToObjectives", "Dégâts aux objectifs"],
+  ["visionScore", "Score de vision"],
+] as const;
+
 const num = (s: string) => (s.trim() === "" ? null : Number(s));
 
 export function ManualMatchForm({ identity, primaryRole }: { identity: { gameName: string; tagLine: string } | null; primaryRole: string | null }) {
@@ -152,9 +163,9 @@ export function ManualMatchForm({ identity, primaryRole }: { identity: { gameNam
                     <option value={100}>Bleue</option><option value={200}>Rouge</option>
                   </select>
                 </td>
-                {(["kills", "deaths", "assists", "creepScore", "goldEarned", "damageToChampions", "damageToObjectives", "visionScore"] as const).map((k) => (
+                {STAT_FIELDS.map(([k, label]) => (
                   <td key={k} className="p-1 w-20">
-                    <input className={cell} inputMode="numeric" pattern="\d*" aria-label={k} value={r[k]} onChange={(e) => upd(i, k, e.target.value)}
+                    <input className={cell} inputMode="numeric" pattern="\d*" aria-label={label} value={r[k]} onChange={(e) => upd(i, k, e.target.value)}
                       required={["kills", "deaths", "assists"].includes(k)} />
                   </td>
                 ))}

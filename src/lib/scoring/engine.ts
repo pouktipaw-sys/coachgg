@@ -254,7 +254,8 @@ export function computeTeamMvp(entries: MvpEntry[], cfg: Pick<ScoreConfig, "tieT
   } else {
     const m = mvps[0]!;
     const best = m.components.filter((c) => c.available && c.score != null).sort((a, b) => b.score! - a.score!).slice(0, 2);
-    const lead = second ? ` avec ${round1(m.overall - second.overall)} point d'avance sur ${second.displayName}` : "";
+    const gap = second ? round1(m.overall - second.overall) : 0;
+    const lead = second ? ` avec ${gap} point${gap >= 2 ? "s" : ""} d'avance sur ${second.displayName}` : "";
     explanation = `${m.displayName} obtient la meilleure note du groupe (${m.overall}/10)${lead}. Points forts : ${best.map((b) => COMPONENT_LABELS[b.key]).join(", ") || "—"}.`;
     if (second && m.overall - second.overall < 1) explanation += " Écart faible : à interpréter avec prudence.";
   }

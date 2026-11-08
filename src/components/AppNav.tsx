@@ -20,6 +20,7 @@ export function AppNav({ user, unread, invites, isAdmin }: { user: { displayName
     { href: "/app/notifications", label: "Notifications", icon: "◔", badge: unread },
     { href: "/app/capture", label: "Capture PC", icon: "⬚" },
     { href: "/app/settings", label: "Paramètres", icon: "⚙" },
+    { href: "/app/support", label: "Aide", icon: "?" },
     ...(isAdmin ? [{ href: "/app/admin", label: "Administration", icon: "⛭" }] : []),
   ];
   const active = (href: string) => (href === "/app" ? path === "/app" : path.startsWith(href));

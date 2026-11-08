@@ -243,7 +243,7 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
         ))}
         <p className="mt-3 text-xs text-muted">
           Participation aux éliminations, parts de dégâts et d&apos;objectifs : {Object.keys(COMPONENT_LABELS).length} dimensions définies dans la formule {CURRENT_SCORE_CONFIG.version}.
-          Achats et évolution minute par minute : non disponibles pour ce match.
+          {match.source === "RIOT_API" ? "Objets finaux : importés (identifiants Riot). Évolution minute par minute : non importée (MATCH-V5 timeline non intégrée)." : "Achats et évolution minute par minute : non disponibles pour un match saisi manuellement."}
         </p>
       </section>
     </div>

@@ -12,3 +12,4 @@ next-env.d.ts
 .env.*.local
 tests/fixtures/generated/
 tests/.storage/
+tests/.storage-e2e/
