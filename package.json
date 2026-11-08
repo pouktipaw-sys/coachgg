@@ -17,7 +17,8 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test --trace off",
     "dev:all": "node scripts/dev.mjs",
-    "admin:promote": "tsx scripts/promote-admin.ts"
+    "admin:promote": "tsx scripts/promote-admin.ts",
+    "test:analysis": ".venv-analysis/bin/python -m unittest discover -s analysis"
   },
   "engines": {
     "node": ">=20"

@@ -11,11 +11,13 @@ type P = { id: string };
 
 export const GET = authed<P>(async (_req, user, { id }) => {
   const data = await getCoachingData(user.id, id);
-  const job = await prisma.analysisJob.findFirst({
-    where: { recordingId: id, type: "PROCESS_RECORDING" },
-    select: { id: true, status: true, progress: true, attempts: true, maxAttempts: true, error: true, processingMs: true },
-  });
-  return json({ ...data, processingJob: data.access === "owner" ? job : null });
+  const select = { id: true, status: true, progress: true, attempts: true, maxAttempts: true, error: true, processingMs: true, result: true, finishedAt: true, costMicros: true } as const;
+  const [job, analysis] = await Promise.all([
+    prisma.analysisJob.findFirst({ where: { recordingId: id, type: "PROCESS_RECORDING" }, select }),
+    prisma.analysisJob.findFirst({ where: { recordingId: id, type: "ANALYZE_RECORDING" }, select }),
+  ]);
+  const owner = data.access === "owner";
+  return json({ ...data, processingJob: owner ? job : null, analysisJob: owner ? analysis : null });
 });
 
 const unit = z.number().min(0).max(1);

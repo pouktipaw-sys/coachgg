@@ -8,11 +8,11 @@ type P = { id: string };
 export const POST = authed<P>(async (_req, user, { id }) => {
   await requireRecordingOwner(user.id, id);
   const pending = await prisma.analysisJob.updateMany({
-    where: { recordingId: id, status: "PENDING" },
+    where: { recordingId: id, type: "PROCESS_RECORDING", status: "PENDING" },
     data: { status: "CANCELLED", cancelRequested: true, finishedAt: new Date() },
   });
   const running = await prisma.analysisJob.updateMany({
-    where: { recordingId: id, status: "RUNNING" },
+    where: { recordingId: id, type: "PROCESS_RECORDING", status: "RUNNING" },
     data: { cancelRequested: true },
   });
   if (pending.count > 0) {

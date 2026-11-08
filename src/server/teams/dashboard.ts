@@ -67,7 +67,7 @@ export async function teamMatchDetail(userId: string, teamId: string, matchId: s
   // Moments vidéo : uniquement ceux des vidéos réellement partagées avec le groupe (ou à moi).
   const recordings = await prisma.recording.findMany({
     where: { matchId, OR: [{ ownerId: userId }, sharedRecordingWhere(userId)] },
-    include: { recommendations: { orderBy: { decisionMs: "asc" }, select: { id: true, title: true, kind: true, decisionMs: true, advice: true, category: true } } },
+    include: { recommendations: { where: { status: { in: ["PUBLISHED", "DISPUTED"] } }, orderBy: { decisionMs: "asc" }, select: { id: true, title: true, kind: true, decisionMs: true, advice: true, category: true } } },
   });
   const distinctions = report.distinctions as { key: string; label: string; userId: string; reason: string }[];
   const explanation = report.explanation as { text: string; ranking: { userId: string; overall: number }[]; excluded: { userId: string; reason: string }[] };

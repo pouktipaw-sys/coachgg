@@ -33,7 +33,7 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
     me ? progressionFor(user.id, me.id) : null,
     prisma.recording.findMany({
       where: { matchId: id, ...visibleRecordingWhere(user.id) },
-      include: { recommendations: { orderBy: { decisionMs: "asc" }, select: { id: true, title: true, kind: true, decisionMs: true, advice: true } }, owner: { select: { displayName: true } } },
+      include: { recommendations: { where: { status: { in: ["PUBLISHED", "DISPUTED"] } }, orderBy: { decisionMs: "asc" }, select: { id: true, title: true, kind: true, decisionMs: true, advice: true } }, owner: { select: { displayName: true } } },
     }),
     prisma.teamMembership.findMany({ where: { userId: user.id }, select: { teamId: true } }),
   ]);

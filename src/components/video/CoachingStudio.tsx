@@ -399,8 +399,9 @@ export function CoachingStudio({
             />
           )}
           {phase && (
-            <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-black/75 px-2.5 py-1 text-xs font-medium" data-testid="coaching-phase">
+            <div className="pointer-events-none absolute left-3 top-3 max-w-[55%] truncate rounded-md bg-black/75 px-2.5 py-1 text-xs font-medium" data-testid="coaching-phase">
               {KIND_ICON[phase.m.kind]} {phase.label} — {phase.m.title}
+              {phase.m.provenance === "AUTOMATIC" && phase.m.status === "DRAFT" ? " (proposition auto)" : ""}
             </div>
           )}
           {pausedMoment && (
@@ -414,6 +415,9 @@ export function CoachingStudio({
           <div className="pointer-events-none absolute right-3 top-3 flex gap-1">
             {(annotations.length > 0 || moments.length > 0) && allManual && (
               <span className="rounded bg-black/70 px-2 py-0.5 text-[11px] text-muted" data-testid="manual-badge">Annoté manuellement</span>
+            )}
+            {!allManual && (
+              <span className="rounded bg-black/70 px-2 py-0.5 text-[11px] text-accent-2" data-testid="auto-overlay-badge">Contient des propositions automatiques</span>
             )}
             {recording.isDemo && <span className="rounded bg-warn/80 px-2 py-0.5 text-[11px] font-semibold text-black">DÉMO</span>}
           </div>
@@ -517,7 +521,10 @@ export function CoachingStudio({
                   >
                     <span className="font-mono text-xs text-muted">{formatMs(m.decisionMs)}</span>{" "}
                     <span aria-hidden>{KIND_ICON[m.kind]}</span> {m.title}
-                    <span className="block text-xs text-muted">{KIND_LABELS[m.kind]}</span>
+                    <span className="block text-xs text-muted">
+                      {KIND_LABELS[m.kind]}
+                      {m.provenance === "AUTOMATIC" && (m.status === "DRAFT" ? <span className="ml-1 text-warn">· proposition auto à valider</span> : <span className="ml-1 text-accent-2">· auto validée</span>)}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -536,6 +543,15 @@ export function CoachingStudio({
               onContinue={pausedAt?.momentId === activeMoment.id ? continuePlayback : undefined}
               onSeek={seek}
               canReport
+              isOwner={isOwner}
+              onReviewed={(r) => {
+                if (r) setMoments((s) => s.map((x) => (x.id === r.id ? r : x)));
+                else {
+                  setMoments((s) => s.filter((x) => x.id !== activeMoment.id));
+                  setAnnotations((s) => s.filter((a) => a.recommendationId !== activeMoment.id));
+                  setPanel({ k: "moments" });
+                }
+              }}
             />
             {isOwner && (
               <div className="flex gap-3 border-t border-line pt-3 text-xs">

@@ -395,6 +395,7 @@ enum RecommendationStatus {
   DRAFT
   PUBLISHED
   DISPUTED // signalée comme incorrecte
+  REJECTED // proposition automatique rejetée à la revue (conservée pour mesurer la précision)
 }
 
 // Un « moment de coaching » : décision analysée à un instant précis de la vidéo.
@@ -423,6 +424,13 @@ model Recommendation {
   provenance       Provenance           @default(MANUAL)
   analysisVersion  String               @default("manual-1")
   status           RecommendationStatus @default(PUBLISHED)
+  // Analyse automatique : traçabilité et revue humaine
+  analysisJobId    String?
+  autoEvidence     Json? // mesures brutes ayant déclenché la proposition
+  contextSheetKey  String? // planche d'images du contexte précédant l'événement
+  humanEdited      Boolean              @default(false)
+  reviewedAt       DateTime?
+  reviewedById     String?
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 

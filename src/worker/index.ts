@@ -6,6 +6,7 @@ import { prisma } from "../server/db";
 import { claimNextJob, completeJob, failJob } from "../server/jobs";
 import { markRecordingFailed, processRecording } from "../server/video/process";
 import { purgeExpiredRecordings } from "../server/retention";
+import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
 
 const workerId = `${os.hostname()}:${process.pid}`;
 let stopping = false;
@@ -14,14 +15,22 @@ export async function runJob(job: AnalysisJob) {
   const t0 = Date.now();
   try {
     let result: unknown;
+    let status: "SUCCEEDED" | "PARTIAL" | "NEEDS_REVIEW" = "SUCCEEDED";
     switch (job.type) {
       case "PROCESS_RECORDING":
         result = await processRecording(job);
+        if (job.recordingId) await autoRequestAnalysis(job.recordingId).catch(() => {});
         break;
+      case "ANALYZE_RECORDING": {
+        const r = await analyzeRecording(job);
+        result = r.result;
+        status = r.status;
+        break;
+      }
       default:
         throw new Error(`Type de tâche non pris en charge : ${job.type}`);
     }
-    await completeJob(job, (result ?? {}) as object);
+    await completeJob(job, (result ?? {}) as object, status);
     log(job, `terminé en ${Date.now() - t0} ms`);
   } catch (e) {
     const outcome = await failJob(job, e).catch(() => "failed" as const);

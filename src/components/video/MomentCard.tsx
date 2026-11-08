@@ -31,6 +31,8 @@ export function MomentCard({
   onContinue,
   onSeek,
   canReport,
+  isOwner = false,
+  onReviewed,
 }: {
   m: RecommendationDTO;
   recordingId: string;
@@ -39,10 +41,24 @@ export function MomentCard({
   onContinue?: () => void;
   onSeek?: (ms: number) => void;
   canReport: boolean;
+  isOwner?: boolean;
+  onReviewed?: (r: RecommendationDTO | null) => void;
 }) {
   const [reporting, setReporting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const g = gameTimeMs(m.decisionMs, gameOffsetMs);
+  const isAuto = m.provenance === "AUTOMATIC";
+  const pending = isAuto && m.status === "DRAFT";
+
+  async function review(action: "validate" | "reject", comment?: string) {
+    try {
+      const r = await api<{ recommendation: RecommendationDTO }>(`/api/recommendations/${m.id}/review`, { method: "POST", json: { action, comment } });
+      setMsg(action === "validate" ? "Proposition validée : elle est désormais un moment publié." : "Proposition rejetée (conservée pour mesurer la précision de l'analyse).");
+      onReviewed?.(action === "validate" ? { ...m, status: r.recommendation.status } : null);
+    } catch (e) {
+      setMsg(errorMessage(e));
+    }
+  }
 
   async function report(kind: "INCORRECT" | "UNCLEAR" | "HELPFUL", comment?: string) {
     try {
@@ -62,12 +78,47 @@ export function MomentCard({
           <span className="badge border-line text-muted">{CATEGORY_LABELS[m.category as keyof typeof CATEGORY_LABELS] ?? m.category}</span>
           <span className={`badge ${CONF_TONE[m.confidence]}`}>{CONFIDENCE_LABELS[m.confidence]}</span>
           {m.status === "DISPUTED" && <span className="badge border-warn/40 text-warn">Contesté</span>}
+          {isAuto && (
+            <span className="badge border-accent/40 text-accent-2" data-testid="auto-badge">
+              {pending ? "Proposition automatique — à valider" : `Automatique, validée${m.humanEdited ? " et corrigée" : ""}`}
+            </span>
+          )}
         </div>
         <h3 className="mt-2 text-base font-semibold">{m.title}</h3>
       </header>
 
+      {pending && isOwner && (
+        <div className="rounded-lg border border-warn/40 bg-warn/5 p-3 text-xs" data-testid="review-box">
+          <p className="text-warn">
+            Proposition générée par des règles automatiques ({m.analysisVersion}) à partir de signaux mesurés dans l&apos;image.
+            Elle peut être fausse. Seul vous la voyez tant qu&apos;elle n&apos;est pas validée.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button className="btn-primary px-2.5 py-1 text-xs" onClick={() => review("validate")}>Valider</button>
+            <button
+              className="btn-danger px-2.5 py-1 text-xs"
+              onClick={() => {
+                const c = prompt("Pourquoi rejeter cette proposition ? (facultatif)") ?? undefined;
+                void review("reject", c || undefined);
+              }}
+            >
+              Rejeter
+            </button>
+          </div>
+          <p className="mt-1 text-muted">Pour ajuster l&apos;instant de décision ou le texte, utilisez « Modifier » puis validez.</p>
+        </div>
+      )}
+
+      {m.contextSheetKey && (
+        <section>
+          <h4 className="label">Contexte avant l&apos;événement</h4>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/api/recommendations/${m.id}/sheet`} alt="Planche de 8 images précédant l'événement" className="w-full rounded-lg border border-line" loading="lazy" />
+        </section>
+      )}
+
       <section>
-        <h4 className="label">1 · Observations</h4>
+        <h4 className="label">1 · Observations{isAuto ? " (mesurées automatiquement)" : ""}</h4>
         <ul className="list-disc space-y-1 pl-5">
           {m.observations.map((o) => (
             <li key={o.id}>{o.text}</li>
@@ -126,6 +177,12 @@ export function MomentCard({
         <p>
           {m.provenance === "MANUAL" ? "Annoté manuellement" : "Analyse automatique"} · version {m.analysisVersion} · réf. {recordingId.slice(-6)}/{m.id.slice(-6)}
         </p>
+        {isAuto && m.autoEvidence && (
+          <details className="mt-1">
+            <summary className="cursor-pointer">Mesures brutes</summary>
+            <pre className="mt-1 max-h-48 overflow-auto rounded bg-panel-2 p-2 text-[10px]">{JSON.stringify(m.autoEvidence, null, 2)}</pre>
+          </details>
+        )}
       </section>
 
       {(onReplay || onContinue) && (

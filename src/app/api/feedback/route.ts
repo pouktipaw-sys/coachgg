@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { authed, json, readJson } from "@/server/http";
 import { prisma } from "@/server/db";
-import { requireRecordingView } from "@/server/permissions";
+import { canSeeRecommendation } from "@/server/analysis/review";
 import { notFound } from "@/server/errors";
 
 const schema = z.object({
@@ -13,14 +13,14 @@ const schema = z.object({
 /** Signalement d'un diagnostic incorrect / peu clair, ou proposition de correction. */
 export const POST = authed(async (req, user) => {
   const input = schema.parse(await readJson(req));
-  const rec = await prisma.recommendation.findUnique({ where: { id: input.recommendationId } });
+  const rec = await canSeeRecommendation(user.id, input.recommendationId);
   if (!rec) throw notFound("Moment");
-  await requireRecordingView(user.id, rec.recordingId);
   const fb = await prisma.analysisFeedback.create({
-    data: { userId: user.id, recommendationId: rec.id, kind: input.kind, comment: input.comment },
+    data: { userId: user.id, recommendationId: input.recommendationId, kind: input.kind, comment: input.comment },
   });
-  if (input.kind === "INCORRECT") {
-    await prisma.recommendation.update({ where: { id: rec.id }, data: { status: "DISPUTED" } });
+  // Un brouillon signalé reste un brouillon (DISPUTED rendrait le moment visible aux partages).
+  if (input.kind === "INCORRECT" && rec.status === "PUBLISHED") {
+    await prisma.recommendation.update({ where: { id: input.recommendationId }, data: { status: "DISPUTED" } });
   }
   return json({ feedback: fb }, 201);
 });

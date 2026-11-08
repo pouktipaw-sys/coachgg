@@ -4,6 +4,7 @@ import { Badge, PageHeader, formatDate } from "@/components/ui";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
 import { integrationStatus } from "@/lib/env";
+import { automaticPrecision } from "@/server/analysis/review";
 
 export const metadata = { title: "Administration" };
 
@@ -25,6 +26,7 @@ export default async function AdminPage() {
     }),
   ]);
   const integ = integrationStatus();
+  const precision = await automaticPrecision();
   return (
     <div className="space-y-6">
       <PageHeader title="Administration" />
@@ -41,6 +43,20 @@ export default async function AdminPage() {
         <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
           {Object.entries(integ).map(([k, v]) => <li key={k}><code>{k}</code> : <Badge tone={v === "configured" ? "ok" : "warn"}>{v}</Badge></li>)}
         </ul>
+      </section>
+      <section className="card">
+        <h2 className="h2">Analyse assistée — revue humaine</h2>
+        {precision.length === 0 ? <p className="mt-2 text-sm text-muted">Aucune proposition automatique pour l&apos;instant.</p> : (
+          <table className="mt-2 w-full text-sm">
+            <thead className="text-left text-xs text-muted"><tr><th>Version</th><th>En attente</th><th>Validées</th><th>dont corrigées</th><th>Rejetées</th><th>Taux de validation</th></tr></thead>
+            <tbody>
+              {precision.map((p) => (
+                <tr key={p.version}><td className="py-1 font-mono">{p.version}</td><td>{p.pending}</td><td>{p.validated}</td><td>{p.edited}</td><td>{p.rejected}</td><td>{p.precision == null ? "—" : `${p.precision} %`}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="mt-2 text-xs text-muted">Taux = validées / (validées + rejetées). Mesure de terrain de la qualité des règles, par version.</p>
       </section>
       <section className="card overflow-x-auto">
         <h2 className="h2">Dernières tâches</h2>

@@ -38,7 +38,10 @@ export type RecommendationDTO = {
   advice: string;
   provenance: "MANUAL" | "AUTOMATIC";
   analysisVersion: string;
-  status: "DRAFT" | "PUBLISHED" | "DISPUTED";
+  status: "DRAFT" | "PUBLISHED" | "DISPUTED" | "REJECTED";
+  contextSheetKey?: string | null;
+  autoEvidence?: Record<string, unknown> | null;
+  humanEdited?: boolean;
   clipId: string | null;
   createdAt: string;
   updatedAt: string;

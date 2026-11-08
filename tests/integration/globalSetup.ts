@@ -17,5 +17,9 @@ export default function setup() {
     run("ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440 -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest sample.mp4");
   if (!existsSync(path.join(dir, "sample.webm")))
     run("ffmpeg -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=25 -t 6 -c:v libvpx-vp9 -b:v 300k sample.webm");
+  if (!existsSync(path.join(dir, "analysis.mp4")))
+    run(
+      "ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 30 -vf \"drawbox=x=1000:y=480:w=240:h=240:color=0x202830:t=fill,drawbox=x=1150:y=500:w=30:h=30:color=red:t=fill:enable='between(t,6,13)',hue=s=0:enable='between(t,13,20)'\" -c:v libx264 -pix_fmt yuv420p analysis.mp4",
+    );
   if (!existsSync(path.join(dir, "corrupt.mp4"))) run("sh -c \"(printf '\\000\\000\\000\\030ftypisom'; head -c 50000 /dev/urandom) > corrupt.mp4\"");
 }

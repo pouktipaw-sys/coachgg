@@ -197,3 +197,28 @@ test("groupe d'amis : invitation, match commun et MVP", async ({ page, browser }
   await expect(bob.locator("[data-testid=mvp-explanation]")).toContainText("Alice");
   await bobCtx.close();
 });
+
+test("analyse assistée : proposition automatique en brouillon, revue et validation", async ({ page }) => {
+  const ANALYSIS = path.join(FIX, "analysis.mp4");
+  if (!existsSync(ANALYSIS))
+    execSync(
+      "ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 30 -vf \"drawbox=x=1000:y=480:w=240:h=240:color=0x202830:t=fill,drawbox=x=1150:y=500:w=30:h=30:color=red:t=fill:enable='between(t,6,13)',hue=s=0:enable='between(t,13,20)'\" -c:v libx264 -pix_fmt yuv420p analysis.mp4",
+      { cwd: FIX },
+    );
+  await register(page, "Chloe");
+  await page.goto("/app/videos/upload");
+  await page.setInputFiles("[data-testid=file-input]", ANALYSIS);
+  await page.click("button:has-text('Envoyer la vidéo')");
+  await expect(page.getByText("Vidéo prête")).toBeVisible({ timeout: 60_000 });
+  await page.click("text=Ouvrir le lecteur de coaching");
+  await page.waitForSelector("[data-testid=analysis-panel]");
+  // L'analyse est lancée automatiquement après le traitement.
+  await expect(page.locator("[data-testid=analysis-status]")).toContainText("validation nécessaire", { timeout: 60_000 });
+  await expect(page.getByText("Contient des propositions automatiques")).toBeVisible();
+  await page.getByRole("button", { name: /^0:1\d Écran grisé/ }).click();
+  await expect(page.locator("[data-testid=auto-badge]")).toContainText("à valider");
+  await expect(page.getByAltText(/Planche de 8 images/)).toBeVisible();
+  await expect(page.locator("[data-testid=moment-card]")).toContainText("pas forcément une erreur");
+  await page.locator("[data-testid=review-box]").getByRole("button", { name: "Valider" }).click();
+  await expect(page.locator("[data-testid=auto-badge]")).toContainText("validée");
+});

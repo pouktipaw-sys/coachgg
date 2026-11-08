@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CoachingStudio } from "@/components/video/CoachingStudio";
 import { RecordingStatusPanel } from "@/components/video/RecordingStatusPanel";
 import { RecordingSettings } from "@/components/video/RecordingSettings";
+import { AnalysisPanel, type AnalysisJobDTO } from "@/components/video/AnalysisPanel";
 import { Badge, PageHeader, RECORDING_STATUS } from "@/components/ui";
 import type { AnnotationDTO, RecommendationDTO, RecordingDTO } from "@/components/video/types";
 import { requirePageUser } from "@/server/auth/page";
@@ -28,6 +29,12 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const isOwner = data.access === "owner";
   const rec = data.recording;
   const st = RECORDING_STATUS[rec.status]!;
+  const analysisJob = isOwner
+    ? await prisma.analysisJob.findFirst({
+        where: { recordingId: id, type: "ANALYZE_RECORDING" },
+        select: { id: true, status: true, progress: true, attempts: true, maxAttempts: true, error: true, processingMs: true, costMicros: true, finishedAt: true, result: true },
+      })
+    : null;
   const [matches, teams, shares] = isOwner
     ? await Promise.all([
         userMatchOptions(user.id),
@@ -54,6 +61,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
       />
       {rec.status === "READY" ? (
         <CoachingStudio
+          key={`${analysisJob?.finishedAt?.getTime() ?? 0}`}
           recording={toPlain<RecordingDTO>(rec)}
           initialMoments={toPlain<RecommendationDTO[]>(data.recommendations)}
           initialAnnotations={toPlain<AnnotationDTO[]>(data.annotations)}
@@ -61,6 +69,11 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
         />
       ) : (
         <RecordingStatusPanel id={rec.id} status={rec.status} errorMessage={rec.errorMessage} isOwner={isOwner} />
+      )}
+      {isOwner && rec.status === "READY" && (
+        <div className="mt-6">
+          <AnalysisPanel recordingId={rec.id} initial={toPlain<AnalysisJobDTO>(analysisJob)} />
+        </div>
       )}
       {isOwner && (
         <RecordingSettings

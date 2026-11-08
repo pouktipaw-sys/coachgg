@@ -32,6 +32,13 @@ export const env = {
   get ffmpegTimeoutSec() {
     return int("FFMPEG_TIMEOUT_SEC", 3600);
   },
+  /** Interpréteur Python de l'analyse vidéo (venv recommandé : .venv-analysis). */
+  get pythonBin() {
+    return process.env.ANALYSIS_PYTHON ?? ".venv-analysis/bin/python";
+  },
+  get analysisTimeoutSec() {
+    return int("ANALYSIS_TIMEOUT_SEC", 1800);
+  },
   get riotApiKey() {
     return process.env.RIOT_API_KEY?.trim() || null;
   },
@@ -47,7 +54,7 @@ export function integrationStatus() {
     riotSignOn: "not_configured", // RSO : nécessite une application Riot approuvée
     mailer: "console_dev_only",
     desktopCapture: "not_available",
-    automaticVideoAnalysis: "not_available",
+    automaticVideoAnalysis: "experimental", // nécessite Python + OpenCV côté worker
     objectStorage: "local_disk",
   } as const;
 }

@@ -26,7 +26,7 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 | Objectifs individuels et collectifs | ✅ Opérationnel | Bilan mesuré sur les notes réelles de la période. |
 | Notifications internes | ✅ Opérationnel | Vidéo prête/échec, invitations. |
 | Administration minimale | ✅ Opérationnel | Tâches, relance, signalements. |
-| Analyse vidéo automatique | ⏳ Non disponible | Phase 4. |
+| Analyse vidéo assistée | 🧪 Expérimentale | Python/OpenCV : écran grisé (mort probable), forte activité, marqueurs rouges minimap avant l'événement → propositions **en brouillon à valider**. Voir [docs/ANALYSIS.md](docs/ANALYSIS.md). |
 | Application PC (capture) | ⏳ Non disponible | Phase 5 — conception dans [docs/DESKTOP.md](docs/DESKTOP.md). |
 | Coach conversationnel | ⏳ Non disponible | Phase 6. |
 | Export vidéo annotée, visionnage synchronisé multi-vidéos | ⏳ Non disponible | |
@@ -38,7 +38,7 @@ Voir [docs/ROADMAP.md](docs/ROADMAP.md) pour l'avancement par phase.
 
 ## Démarrage rapide
 
-Prérequis : **Node.js ≥ 20**, **PostgreSQL ≥ 14**, **FFmpeg** (avec `ffprobe`) dans le `PATH`.
+Prérequis : **Node.js ≥ 20**, **PostgreSQL ≥ 14**, **FFmpeg** (avec `ffprobe`) dans le `PATH`, **Python ≥ 3.10** pour l'analyse assistée (facultatif).
 
 ```bash
 npm install
@@ -50,6 +50,10 @@ cp .env.example .env   # puis ajustez DATABASE_URL
 
 ```bash
 npx prisma migrate deploy
+```
+
+```bash
+python3 -m venv .venv-analysis && .venv-analysis/bin/pip install -r analysis/requirements.txt   # analyse assistée (facultatif)
 ```
 
 ```bash
@@ -74,6 +78,7 @@ Administrateur : `npm run admin:promote -- email@exemple.fr`.
 |---|---|
 | `npm run test:unit` | Logique pure : schéma d'annotations, géométrie (letterbox, redimensionnement), parcours pédagogique, formats, notation, MVP. |
 | `npm run test:integration` | PostgreSQL + **FFmpeg réels** : pipeline vidéo (MP4, WEBM, corrompu, reprise d'envoi), file de tâches, permissions (utilisateurs, groupes, retrait de partage, départ), auth, matchs, MVP, égalité, Riot simulé, export/suppression. Base `coachgg_test` (doit contenir « test »). |
+| `npm run test:analysis` | Tests Python de l'analyseur (fonctions de détection). |
 | `npm run test:e2e` | Playwright, serveur + worker réels, base `coachgg_e2e` : import réel → moment → annotation → ralenti → pause → seek → redimensionnement → plein écran → persistance ; fichier invalide ; groupe → invitation → match commun → MVP. |
 
 ```bash
@@ -85,6 +90,7 @@ createdb coachgg_test && createdb coachgg_e2e
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — découpage, modèle de données, pipeline, sécurité.
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — variables d'environnement, intégrations externes, déploiement.
 - [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md) — format des annotations et des moments de coaching.
+- [docs/ANALYSIS.md](docs/ANALYSIS.md) — analyse vidéo assistée : pipeline, signaux, règles, revue, limites.
 - [docs/SCORING.md](docs/SCORING.md) — note CoachGG, MVP, limites.
 - [docs/DESKTOP.md](docs/DESKTOP.md) — application PC de capture (conception, contraintes).
 - [docs/LEGAL.md](docs/LEGAL.md) — points juridiques et autorisations à faire valider.

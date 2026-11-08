@@ -18,7 +18,7 @@ describe("pipeline vidéo (fichiers réels, FFmpeg réel)", () => {
     expect(rec.videoCodec).toBe("h264");
     expect(await storage().size(rec.playbackKey!)).toBeGreaterThan(1000);
     expect(await storage().size(rec.thumbnailKey!)).toBeGreaterThan(100);
-    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id } });
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "PROCESS_RECORDING" } });
     expect(job.status).toBe("SUCCEEDED");
     expect(job.processingMs).toBeGreaterThanOrEqual(0);
     const notif = await prisma.notification.findFirst({ where: { userId: u.id, type: "recording_ready" } });
@@ -54,7 +54,7 @@ describe("pipeline vidéo (fichiers réels, FFmpeg réel)", () => {
     const rec = await prisma.recording.findUniqueOrThrow({ where: { id } });
     expect(rec.status).toBe("FAILED");
     expect(rec.errorMessage).toMatch(/illisible|corrompu|piste/i);
-    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id } });
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "PROCESS_RECORDING" } });
     expect(job.status).toBe("FAILED");
     expect(job.attempts).toBe(1);
   });

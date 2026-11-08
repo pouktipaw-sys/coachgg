@@ -72,7 +72,7 @@ export default async function Home() {
           <li>✅ Note de performance versionnée et expliquée</li>
           <li>✅ Groupes, invitations, MVP entre amis</li>
           <li>🧪 Import Riot (Match-V5) : nécessite une clé API côté serveur</li>
-          <li>⏳ Analyse vidéo automatique : pas encore disponible</li>
+          <li>🧪 Analyse vidéo assistée : propositions automatiques à valider (expérimental)</li>
           <li>⏳ Application PC d&apos;enregistrement : en conception</li>
         </ul>
         <p className="mt-4 text-xs text-muted">

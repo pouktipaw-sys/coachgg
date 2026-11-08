@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { badRequest, notFound } from "../errors";
 import { requireRecordingOwner, requireRecordingView } from "../permissions";
+import { visibleAnnotationWhere, visibleRecommendationWhere } from "../analysis/review";
 import { annotationInputSchema, recommendationInputSchema, ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 const recInclude = {
@@ -25,8 +26,12 @@ export async function getCoachingData(userId: string, recordingId: string) {
     },
   });
   const [recommendations, annotations] = await Promise.all([
-    prisma.recommendation.findMany({ where: { recordingId }, include: recInclude, orderBy: { decisionMs: "asc" } }),
-    prisma.videoAnnotation.findMany({ where: { recordingId }, orderBy: { startMs: "asc" } }),
+    prisma.recommendation.findMany({
+      where: { recordingId, ...visibleRecommendationWhere(access === "owner") },
+      include: recInclude,
+      orderBy: { decisionMs: "asc" },
+    }),
+    prisma.videoAnnotation.findMany({ where: { recordingId, ...visibleAnnotationWhere(access === "owner") }, orderBy: { startMs: "asc" } }),
   ]);
   return { access, recording, recommendations, annotations };
 }
@@ -105,6 +110,7 @@ export async function updateRecommendation(userId: string, recommendationId: str
         confidenceReason: input.confidenceReason,
         advice: input.advice,
         clipId: input.clipId ?? null,
+        humanEdited: existing.provenance === "AUTOMATIC" ? true : undefined,
         observations: {
           create: input.observations.map((text) => ({
             text,
@@ -112,6 +118,7 @@ export async function updateRecommendation(userId: string, recommendationId: str
             timeMs: input.decisionMs,
             category: input.category,
             source: "video",
+            // Observation réécrite par l'utilisateur : provenance manuelle.
             provenance: "MANUAL",
             authorId: userId,
           })),

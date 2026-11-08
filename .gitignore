@@ -13,3 +13,4 @@ next-env.d.ts
 tests/fixtures/generated/
 tests/.storage/
 tests/.storage-e2e/
+.venv-analysis/

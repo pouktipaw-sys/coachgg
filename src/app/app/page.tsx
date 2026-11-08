@@ -19,7 +19,7 @@ export default async function Dashboard() {
     listUserMatches(user.id, parseMatchFilters({}), 20),
     prisma.recording.findMany({ where: { ownerId: user.id }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.recommendation.findMany({
-      where: { recording: { ownerId: user.id } },
+      where: { recording: { ownerId: user.id }, status: { in: ["PUBLISHED", "DISPUTED"] } },
       orderBy: { createdAt: "desc" },
       take: 4,
       select: { id: true, title: true, kind: true, decisionMs: true, recordingId: true, advice: true, provenance: true },
@@ -33,6 +33,12 @@ export default async function Dashboard() {
     }),
   ]);
   const goalProg = goal ? await goalProgress(goal) : null;
+  const drafts = await prisma.recommendation.groupBy({
+    by: ["recordingId"],
+    where: { recording: { ownerId: user.id }, provenance: "AUTOMATIC", status: "DRAFT" },
+    _count: { _all: true },
+  });
+  const draftCount = drafts.reduce((a, d) => a + d._count._all, 0);
 
   const series = scores
     .map((s) => ({ date: s.participant.match.gameStartAt ?? s.participant.match.createdAt, value: s.overall!, comps: s.components as { key: ComponentKey; score: number | null; available: boolean }[] }))
@@ -172,7 +178,12 @@ export default async function Dashboard() {
           <h2 className="h2">Enregistrements et analyses</h2>
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
             <Badge tone="warn">Capture PC : non disponible</Badge>
-            <Badge tone="warn">Analyse vidéo automatique : non disponible</Badge>
+            <Badge tone="info">Analyse assistée : expérimentale</Badge>
+            {draftCount > 0 && (
+              <Link href={`/app/videos/${drafts[0]!.recordingId}`}>
+                <Badge tone="warn">{draftCount} proposition(s) automatique(s) à valider</Badge>
+              </Link>
+            )}
             <Badge tone="info">Traitements en attente/en cours : {jobCount("PENDING") + jobCount("RUNNING")}</Badge>
             {jobCount("FAILED") > 0 && <Badge tone="bad">Échecs : {jobCount("FAILED")}</Badge>}
           </div>
