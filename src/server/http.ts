@@ -1,3 +1,4 @@
+import "@/lib/zod-fr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError } from "zod";
 import { HttpError, unauthorized } from "./errors";

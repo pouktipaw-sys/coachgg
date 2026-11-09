@@ -2,7 +2,7 @@
 // fournies ; il ne calcule pas les notes et ne voit que les données autorisées.
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { renderSources, type Source } from "./context";
 import type { CoachAnswer } from "./rules";
 

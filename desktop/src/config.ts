@@ -31,14 +31,14 @@ export const configSchema = z.object({
       microphone: z.literal(false).default(false),
       webcam: z.literal(false).default(false),
     })
-    .default({}),
+    .prefault({}), // zod 4 : « prefault » applique les valeurs par défaut internes
   storage: z
     .object({
       dir: z.string().optional(),
       maxDiskBytes: z.number().int().min(1024 ** 3).default(20 * 1024 ** 3),
       deleteAfterUpload: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}), // zod 4 : « prefault » applique les valeurs par défaut internes
   upload: z
     .object({
       // full : partie entière ; clips : uniquement les séquences autour des événements du joueur.
@@ -47,14 +47,14 @@ export const configSchema = z.object({
       clipAfterSec: z.number().int().min(2).max(30).default(5),
       autoUpload: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}), // zod 4 : « prefault » applique les valeurs par défaut internes
   liveClient: z
     .object({
       // API locale du client de jeu (lecture seule) : détection de partie et événements, utilisés APRÈS le match.
       url: z.string().default("https://127.0.0.1:2999"),
       pollMs: z.number().int().min(500).max(10_000).default(2000),
     })
-    .default({}),
+    .prefault({}), // zod 4 : « prefault » applique les valeurs par défaut internes
 });
 
 export type AgentConfig = z.infer<typeof configSchema>;

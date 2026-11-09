@@ -36,7 +36,7 @@ export const analysisOutputSchema = z.object({
         startMs: z.number().int().min(0),
         endMs: z.number().int().min(0),
         confidence: z.enum(["LOW", "MEDIUM"]),
-        metrics: z.record(z.number()),
+        metrics: z.record(z.string(), z.number()),
         context: z.object({
           fromMs: z.number().int().min(0),
           toMs: z.number().int().min(0),
