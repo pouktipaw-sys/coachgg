@@ -65,7 +65,6 @@ export default async function VideoPage({ params, searchParams }: { params: Prom
       />
       {rec.status === "READY" ? (
         <CoachingStudio
-          key={`${analysisJob?.finishedAt?.getTime() ?? 0}`}
           recording={toPlain<RecordingDTO>(rec)}
           initialMoments={toPlain<RecommendationDTO[]>(data.recommendations)}
           initialAnnotations={toPlain<AnnotationDTO[]>(data.annotations)}

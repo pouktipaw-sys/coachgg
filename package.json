@@ -21,15 +21,18 @@
     "test:analysis": ".venv-analysis/bin/python -m unittest discover -s analysis",
     "benchmark:analysis": "tsx scripts/benchmark-analysis.ts",
     "agent": "tsx desktop/src/cli.ts",
-    "demo:video": "node scripts/demo-video.cjs"
+    "demo:video": "node scripts/demo-video.cjs",
+    "postinstall": "prisma generate"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.7.0",
-    "@prisma/client": "^6.19.3",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "next": "^16.4.6",
+    "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
@@ -38,9 +41,10 @@
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "prisma": "^6.19.3",
+    "prisma": "^7.10.1",
     "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

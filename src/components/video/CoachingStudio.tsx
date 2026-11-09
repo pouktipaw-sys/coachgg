@@ -42,6 +42,10 @@ export function CoachingStudio({
   const [recording, setRecording] = useState(initialRecording);
   const [moments, setMoments] = useState(initialMoments);
   const [annotations, setAnnotations] = useState(initialAnnotations);
+  // Données rafraîchies par le serveur (ex. fin de l'analyse assistée) : on les intègre
+  // SANS recréer le lecteur, pour ne pas interrompre la lecture ni perdre la position.
+  useEffect(() => setMoments(initialMoments), [initialMoments]);
+  useEffect(() => setAnnotations(initialAnnotations), [initialAnnotations]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
