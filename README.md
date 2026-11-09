@@ -39,7 +39,7 @@ Voir [docs/ROADMAP.md](docs/ROADMAP.md) pour l'avancement par phase.
 
 ## Démarrage rapide
 
-Prérequis : **Node.js ≥ 20**, **PostgreSQL ≥ 14**, **FFmpeg** (avec `ffprobe`) dans le `PATH`, **Python ≥ 3.10** pour l'analyse assistée (facultatif).
+Prérequis : **Node.js ≥ 22.12**, **PostgreSQL ≥ 14**, **FFmpeg** (avec `ffprobe`) dans le `PATH`, **Python ≥ 3.10** pour l'analyse assistée (facultatif).
 
 ```bash
 npm install

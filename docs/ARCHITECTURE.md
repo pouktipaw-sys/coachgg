@@ -3,10 +3,10 @@
 ## Vue d'ensemble
 
 ```
-Navigateur ──HTTP──▶ Next.js 15 (App Router, TypeScript)
+Navigateur ──HTTP──▶ Next.js 16 (App Router, Turbopack, TypeScript 7)
                        ├─ pages (Server Components) + composants client
                        ├─ route handlers /api/*  (auth, contrôle d'accès, validation zod)
-                       └─ Prisma ──▶ PostgreSQL ◀── Worker Node (tsx)
+                       └─ Prisma 7 (adaptateur pg) ──▶ PostgreSQL ◀── Worker Node (tsx)
                                         ▲             ├─ file de tâches (SKIP LOCKED)
                                         │             ├─ FFmpeg / ffprobe (processus isolés)
                        stockage privé ◀─┴─────────────┘  └─ purge de conservation
@@ -76,3 +76,8 @@ Chaque analyse conserve source, version (`analysisVersion`), statut, horodatages
 - Secrets uniquement via variables d'environnement (`.env` ignoré par git).
 
 Limites connues : limiteur de débit en mémoire (à partager en multi-instance) ; isolation FFmpeg au niveau processus (conteneur/sandbox dédié recommandé en production) ; pas d'antivirus sur les fichiers.
+
+## Versions principales
+Next.js 16.4 (Turbopack) · React 19.3 · TypeScript 7 (compilateur natif) · Prisma 7.10 avec `@prisma/adapter-pg` · zod 4 (messages en français) · Vitest 5 · Playwright 1.63 (version alignée sur les navigateurs installés) · Tailwind CSS 4.3 · SDK Anthropic 1.7.
+
+Prisma 7 : l'URL de la base est lue par `prisma.config.ts` (CLI) et par `src/server/db.ts` (application, via l'adaptateur pg) ; `.env` est chargé avec `process.loadEnvFile` sans écraser les variables déjà définies. Le client est régénéré à l'installation (`postinstall`).

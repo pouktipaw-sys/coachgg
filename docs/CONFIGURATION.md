@@ -4,7 +4,8 @@ Toutes les variables sont lues côté serveur. Copiez `.env.example` en `.env`. 
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `DATABASE_URL` | — | PostgreSQL. |
+| `DATABASE_URL` | — | PostgreSQL (lu par `prisma.config.ts` et `src/server/db.ts`). |
+| `DATABASE_POOL_MAX` | 10 | Connexions max. du pool (adaptateur pg). |
 | `APP_URL` | `http://localhost:3000` | Origine publique (contrôle CSRF, liens). |
 | `STORAGE_DIR` | `./storage` | Stockage privé des vidéos (driver disque). |
 | `MAX_UPLOAD_BYTES` | 4 Go | Taille max d'un fichier. |
