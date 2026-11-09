@@ -155,7 +155,12 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
           {/* 6. Clips + 7. Objectif */}
           <section className="card space-y-4">
             <div>
-              <h2 className="h2">Vidéos et moments associés</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="h2">Vidéos et moments associés</h2>
+                {recordings.filter((r) => r.gameStartOffsetMs != null && r.status === "READY").length >= 1 && (
+                  <Link className="btn text-xs" href={`/app/matches/${id}/sync`} data-testid="open-sync">Visionnage synchronisé</Link>
+                )}
+              </div>
               {recordings.length === 0 ? (
                 <p className="mt-2 text-sm text-muted">
                   Aucune vidéo liée. <Link className="underline" href="/app/videos/upload">Importer la vidéo de cette partie</Link> ou associer une vidéo existante depuis son lecteur.

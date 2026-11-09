@@ -8,6 +8,7 @@ import { canViewMatch } from "@/server/permissions";
 import { createGoal, goalProgress } from "@/server/goals";
 import { deleteAccount, exportUserData } from "@/server/account";
 import { hashPassword } from "@/server/auth/password";
+import { syncSession } from "@/server/video/sync";
 import { makeUser } from "./helpers";
 
 type P = ManualMatchInput["participants"][number];
@@ -256,5 +257,31 @@ describe("objectifs, export et suppression", () => {
     const admins = await prisma.teamMembership.findMany({ where: { teamId: team.id, role: "ADMIN" } });
     expect(admins).toHaveLength(1);
     expect(bob).toBeTruthy();
+  });
+  it("visionnage synchronisé : seules les vidéos déjà visibles, groupe ≠ accès aux vidéos privées", async () => {
+    const { ana, bob, team } = await friends();
+    const m = await createManualMatch(ana.id, teamMatch());
+    const rec = (ownerId: string, extra: object) =>
+      prisma.recording.create({
+        data: { ownerId, matchId: m.id, title: "v", originalFilename: "v.mp4", declaredMime: "", sizeBytes: 10n, originalKey: "k", playbackKey: "p", status: "READY", durationMs: 600_000, ...extra },
+      });
+    await rec(ana.id, { title: "Ana synchro", gameStartOffsetMs: 20_000 });
+    await rec(ana.id, { title: "Ana brute" });
+    const bobRec = await rec(bob.id, { title: "Bob synchro", gameStartOffsetMs: -60_000 });
+    await rec(ana.id, { title: "En cours", status: "PROCESSING", gameStartOffsetMs: 0 });
+
+    let s = await syncSession(ana.id, m.id);
+    expect(s.tracks.map((t) => t.title)).toEqual(["Ana synchro"]); // la vidéo privée de Bob n'apparaît pas
+    expect(s.unsynced.map((t) => t.title)).toEqual(["Ana brute"]);
+
+    await prisma.sharePermission.create({ data: { recordingId: bobRec.id, grantedById: bob.id, granteeTeamId: team.id } });
+    s = await syncSession(ana.id, m.id);
+    expect(s.tracks.map((t) => [t.title, t.mine, t.gameStartOffsetMs])).toEqual([
+      ["Ana synchro", true, 20_000],
+      ["Bob synchro", false, -60_000],
+    ]);
+
+    const outsider = await makeUser("Zed");
+    await expect(syncSession(outsider.id, m.id)).rejects.toMatchObject({ status: 404 });
   });
 });
