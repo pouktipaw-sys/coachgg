@@ -7,6 +7,7 @@ import { claimNextJob, completeJob, failJob } from "../server/jobs";
 import { markRecordingFailed, processRecording } from "../server/video/process";
 import { purgeExpiredRecordings } from "../server/retention";
 import { sendWeeklyReviews } from "../server/progress";
+import { exportClip, markExportFailed } from "../server/clipExport";
 import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
 
 const workerId = `${os.hostname()}:${process.pid}`;
@@ -28,6 +29,9 @@ export async function runJob(job: AnalysisJob) {
         status = r.status;
         break;
       }
+      case "EXPORT_CLIP":
+        result = await exportClip(job);
+        break;
       default:
         throw new Error(`Type de tâche non pris en charge : ${job.type}`);
     }
@@ -36,6 +40,10 @@ export async function runJob(job: AnalysisJob) {
   } catch (e) {
     const outcome = await failJob(job, e).catch(() => "failed" as const);
     log(job, `${outcome} : ${e instanceof Error ? e.message : String(e)}`);
+    const clipId = (job.payload as { clipId?: string } | null)?.clipId;
+    if (outcome !== "retry" && job.type === "EXPORT_CLIP" && clipId) {
+      await markExportFailed(clipId, e instanceof Error ? e.message : "Échec du rendu.");
+    }
     if (outcome === "failed" && job.type === "PROCESS_RECORDING" && job.recordingId) {
       await markRecordingFailed(job.recordingId, e instanceof Error ? e.message : "Échec du traitement.");
     }

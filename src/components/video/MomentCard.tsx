@@ -188,6 +188,22 @@ export function MomentCard({
       {(onReplay || onContinue) && (
         <div className="flex flex-wrap gap-2">
           {onReplay && <button className="btn-ghost" onClick={onReplay}>↺ Revoir la séquence</button>}
+          {m.status !== "DRAFT" && (
+            <button
+              className="btn-ghost"
+              data-testid="moment-to-clip"
+              onClick={async () => {
+                try {
+                  await api(`/api/recommendations/${m.id}/clip`, { method: "POST", json: {} });
+                  setMsg("Ajouté à vos clips.");
+                } catch (e) {
+                  setMsg(errorMessage(e));
+                }
+              }}
+            >
+              ✂ Ajouter à mes clips
+            </button>
+          )}
           {onContinue && <button className="btn-primary" onClick={onContinue}>Continuer ▶</button>}
         </div>
       )}

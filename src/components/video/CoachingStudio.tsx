@@ -66,6 +66,19 @@ export function CoachingStudio({
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [clipMsg, setClipMsg] = useState<string | null>(null);
+
+  async function createClipHere() {
+    const at = Math.round(tMs);
+    const startMs = Math.max(0, at - 10_000);
+    const endMs = Math.min(Math.round(durationMs) || at + 5000, at + 5000);
+    try {
+      await api("/api/clips", { method: "POST", json: { recordingId: recording.id, title: `Clip à ${formatMs(at)}`, kind: "INTERESTING", startMs, endMs } });
+      setClipMsg(`Clip ${formatMs(startMs)}–${formatMs(endMs)} ajouté à la bibliothèque.`);
+    } catch (e) {
+      setClipMsg(errorMessage(e));
+    }
+  }
 
   const prevMsRef = useRef(0);
   const seenRef = useRef(new Set<string>());
@@ -506,10 +519,12 @@ export function CoachingStudio({
             <button className={`btn-ghost ${showAnn ? "border-accent/60" : ""}`} aria-pressed={showAnn} onClick={() => setShowAnn((s) => !s)} data-testid="toggle-annotations">
               Annotations {showAnn ? "visibles" : "masquées"}
             </button>
+            <button className="btn-ghost" onClick={createClipHere} title="10 s avant et 5 s après la position actuelle" data-testid="create-clip">✂ Créer un clip</button>
             <button className="btn-ghost" onClick={toggleFullscreen} aria-label="Plein écran">⛶</button>
           </div>
         </div>
         <p className="text-[11px] text-muted">
+          {clipMsg && <span className="mr-2 text-accent-2" role="status">{clipMsg} <a className="underline" href="/app/clips">Voir mes clips</a> ·</span>}
           Raccourcis : Espace/K lecture · J/L ±5 s · ,/. image par image · [ ] événement · A annotations · C coaching · F plein écran
         </p>
       </div>

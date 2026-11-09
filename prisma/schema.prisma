@@ -168,6 +168,9 @@ model GameIdentity {
   puuid        String?
   verification IdentityVerification @default(DECLARED)
   isPrimary    Boolean              @default(true)
+  // Rang (API Riot LEAGUE-V4), instantané au moment de la récupération
+  rank          Json?
+  rankFetchedAt DateTime?
   createdAt    DateTime             @default(now())
 
   @@unique([userId, provider, gameName, tagLine])
@@ -373,16 +376,24 @@ model Clip {
   favorite     Boolean    @default(false)
   personalNote String?
   provenance   Provenance @default(MANUAL)
+  // Export vidéo annotée (rendu par le worker)
+  exportStatus String? // PENDING | RUNNING | READY | FAILED
+  exportKey    String?
+  exportError  String?
+  exportedAt   DateTime?
   createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now()) @updatedAt
 
   recommendations Recommendation[]
 
   @@index([recordingId])
+  @@index([ownerId, createdAt])
 }
 
 // ─────────────────────────── Analyses ───────────────────────────
 
 enum JobType {
+  EXPORT_CLIP // rendu d'un clip avec annotations incrustées
   PROCESS_RECORDING // validation ffprobe + transcodage + miniature
   ANALYZE_RECORDING // analyse vidéo assistée (phase 4)
   COMPUTE_SCORES
@@ -763,4 +774,19 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt])
+}
+
+// Invitation à un groupe envoyée par email à une personne SANS compte : elle est
+// convertie en invitation normale lorsque cette adresse crée son compte.
+model TeamEmailInvite {
+  id          String    @id // sha256 du jeton
+  teamId      String
+  email       String
+  inviterId   String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  consumedAt  DateTime?
+
+  @@index([email])
+  @@index([teamId])
 }

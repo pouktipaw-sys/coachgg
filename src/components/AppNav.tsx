@@ -13,6 +13,7 @@ export function AppNav({ user, unread, invites, isAdmin }: { user: { displayName
   const items: Item[] = [
     { href: "/app", label: "Tableau de bord", icon: "◧" },
     { href: "/app/videos", label: "Vidéos & coaching", icon: "▶" },
+    { href: "/app/clips", label: "Clips", icon: "✂" },
     { href: "/app/matches", label: "Matchs & stats", icon: "▤" },
     { href: "/app/progress", label: "Progression", icon: "↗" },
     { href: "/app/goals", label: "Objectifs", icon: "◇" },
