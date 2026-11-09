@@ -12,7 +12,7 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 
 | Domaine | État | Détail |
 |---|---|---|
-| Comptes (inscription, connexion, déconnexion, récupération) | ✅ Opérationnel | Sessions en base, scrypt. Récupération : lien écrit dans les logs serveur **en dev uniquement** (email non configuré). |
+| Comptes (inscription, connexion, déconnexion, récupération) | ✅ Opérationnel | Sessions en base, scrypt. Emails via SMTP si `SMTP_URL` est défini ; sinon lien écrit dans les logs serveur **en dev uniquement**. |
 | Profil, préférences, confidentialité, export, suppression | ✅ Opérationnel | Export JSON, suppression définitive (fichiers + données). |
 | Identité Riot | 🧪 Déclarée | Riot ID saisi par l'utilisateur, **non vérifié** (Riot Sign On non disponible). Jamais de mot de passe Riot. |
 | **Import vidéo** | ✅ Opérationnel | Envoi par morceaux, progression, reprise après coupure ou rechargement, annulation, validation extension + signature + ffprobe, quotas. |
@@ -21,8 +21,8 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 | Moments de coaching (Observations / Interprétation / Alternatives / Confiance / Conseil / Références) | ✅ Opérationnel (saisie manuelle) | Signalement d'un diagnostic incorrect. |
 | Statistiques, historique, filtres, rapport de match | ✅ Opérationnel | Saisie manuelle ; import Riot si clé configurée. |
 | Note CoachGG expliquée | 🧪 Expérimentale | Formule `perf-1.0.0` déterministe, versionnée, testée. Repères = heuristiques internes (pas d'échantillon). |
-| Import Riot (MATCH-V5) | ⚙️ Non configuré par défaut | Nécessite `RIOT_API_KEY`. Testé avec un serveur simulé. |
-| Groupes, invitations, rôles, matchs communs, MVP, distinctions, rapport collectif | ✅ Opérationnel | |
+| Import Riot (MATCH-V5 + timeline) | ⚙️ Non configuré par défaut | Nécessite `RIOT_API_KEY`. Matchs, évolution or/CS minute par minute, achats. Testé avec un serveur simulé (aucune clé réelle ici). |
+| Groupes, invitations, rôles, matchs communs, MVP, distinctions, rapport collectif | ✅ Opérationnel | Invitation par email d'une personne sans compte : lien d'inscription à usage unique (envoi réel si SMTP configuré). |
 | Objectifs individuels et collectifs | ✅ Opérationnel | Bilan mesuré sur les notes réelles de la période. |
 | Notifications internes | ✅ Opérationnel | Vidéo prête/échec, invitations. |
 | Administration minimale | ✅ Opérationnel | Tâches, relance, signalements. |
@@ -30,8 +30,9 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 | Application PC (capture) | 🧪 Expérimentale | Agent `npm run agent -- start` : appairage par code, détection de partie, enregistrement de la fenêtre du jeu (FFmpeg), synchronisation automatique, découpage, envoi reprenable. Cœur testé sous Linux ; **capture Windows non encore testée sur un vrai PC**. Voir [docs/DESKTOP.md](docs/DESKTOP.md). |
 | Coach conversationnel | ✅ Mode sans IA · 🧪 mode IA si clé | Réponses sourcées (matchs, clips à l'horodatage, objectifs, groupes), information manquante explicite, signalement. Mode IA : Claude (`claude-opus-5-5`) avec `ANTHROPIC_API_KEY`, citations vérifiées, repli automatique. Voir [docs/COACH.md](docs/COACH.md). |
 | Progression et bilans | ✅ Opérationnel | Forces, difficultés, tendances, par rôle/champion, objectifs accomplis ; bilan hebdomadaire notifié. |
-| Export vidéo annotée, visionnage synchronisé multi-vidéos | ⏳ Non disponible | |
-| Rang (LEAGUE-V4) | ⏳ Non intégré | Affiché « non disponible ». |
+| Clips et export vidéo annotée | ✅ Opérationnel | Bibliothèque (favoris, catégories, notes), export MP4 avec corrections incrustées (Pillow + FFmpeg, worker) : ralenti, pause à la décision, alternative, explication. Les brouillons automatiques ne sont jamais incrustés. |
+| Visionnage synchronisé multi-vidéos | ✅ Opérationnel | Vidéos d'un même match sur une horloge de jeu commune (lecture, déplacement, vitesse, son, moments). Uniquement les vidéos déjà visibles par l'utilisateur. |
+| Rang (LEAGUE-V4) | ⚙️ Si clé Riot | Bouton « Actualiser le rang » dans les paramètres ; testé avec un serveur simulé. |
 
 Voir [docs/ROADMAP.md](docs/ROADMAP.md) pour l'avancement par phase.
 

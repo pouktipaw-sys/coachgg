@@ -15,7 +15,8 @@ Toutes les variables sont lues côté serveur. Copiez `.env.example` en `.env`. 
 | `FFMPEG_THREADS` | 2 | Threads de transcodage. |
 | `FFMPEG_TIMEOUT_SEC` | 3600 | Durée max d'un traitement. |
 | `RIOT_API_KEY` | vide | Active l'import Riot. |
-| `MAILER` | `console` | Seule valeur supportée actuellement. |
+| `SMTP_URL` | vide | Envoi réel des emails (`smtp://` ou `smtps://user:pass@hôte:port`). Vide : logs serveur en dev, aucun envoi en prod. |
+| `MAIL_FROM` | `CoachGG <no-reply@localhost>` | Expéditeur des emails. |
 
 ## Intégrations externes
 
@@ -23,11 +24,13 @@ Toutes les variables sont lues côté serveur. Copiez `.env.example` en `.env`. 
 - **Sans clé** : saisie manuelle des statistiques ; tout le reste fonctionne.
 - **Clé de développement** (developer.riotgames.com) : expire toutes les 24 h, débit limité — tests uniquement.
 - **Clé de production** : demande d'enregistrement de produit auprès de Riot, à faire valider (description du produit, conformité aux politiques développeur).
-- Endpoints utilisés : `ACCOUNT-V1 /riot/account/v1/accounts/by-riot-id`, `MATCH-V5 /lol/match/v5/matches/by-puuid/{puuid}/ids`, `MATCH-V5 /lol/match/v5/matches/{id}`. Non utilisés pour l'instant : LEAGUE-V4 (rang), MATCH-V5 timeline (évolution minute par minute).
+- Endpoints utilisés : `ACCOUNT-V1 /riot/account/v1/accounts/by-riot-id`, `MATCH-V5 /lol/match/v5/matches/by-puuid/{puuid}/ids`, `MATCH-V5 /lol/match/v5/matches/{id}`, `MATCH-V5 /lol/match/v5/matches/{id}/timeline` (or/CS par minute, achats ; facultatif à l'import), `LEAGUE-V4 /lol/league/v4/entries/by-puuid/{puuid}` (rang, servi par l'hôte du serveur de jeu, ex. `euw1`).
 - **Riot Sign On (RSO)** : nécessaire pour **prouver** qu'un joueur possède un Riot ID. Accordé par Riot à des applications approuvées. En attendant, les identités sont « déclarées » et l'interface le dit.
 
-### Email — non configuré
-L'interface `src/server/mailer.ts` doit être branchée sur un fournisseur (SMTP ou API) pour : récupération de mot de passe en production, invitations à des personnes sans compte. En développement, les messages sont écrits dans les logs serveur.
+### Email — SMTP
+`src/server/mailer.ts` envoie via SMTP (nodemailer) quand `SMTP_URL` est défini : récupération de mot de passe, invitations à un groupe (comptes existants et personnes sans compte). Sans `SMTP_URL` : en développement les messages sont écrits dans les logs serveur ; en production rien n'est envoyé (avertissement dans les logs). Un échec SMTP ne fait jamais échouer l'action.
+
+Invitation d'une personne sans compte : un jeton aléatoire (stocké haché, valable 14 jours, à usage unique) est envoyé par email. À l'inscription avec **la même adresse** et ce lien, il devient une invitation normale que la personne accepte ou refuse. Le jeton prouve la possession de l'adresse ; une inscription avec une autre adresse ne reçoit rien. La réponse à l'inviteur est identique dans tous les cas (pas de révélation de l'existence d'un compte).
 
 ### Stockage objet — optionnel
 Le driver disque suffit sur un serveur unique. Pour plusieurs instances, implémenter `StorageDriver` (`src/server/storage/index.ts`) sur un stockage S3-compatible **privé** ; le worker télécharge alors l'original dans un dossier temporaire.

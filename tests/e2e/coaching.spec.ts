@@ -306,3 +306,52 @@ test("coach (mode sans IA) et progression : réponse sourcée, lien vers la sour
   await page.waitForURL(/\/app\/matches\//);
   await expect(page.locator("[data-testid=match-score]")).not.toHaveText("—");
 });
+
+test("visionnage synchronisé : deux vidéos du même match sur une horloge de jeu commune", async ({ page }) => {
+  await register(page, "Sync");
+  const ids: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    await page.goto("/app/videos/upload");
+    await page.waitForLoadState("networkidle"); // le formulaire doit être hydraté avant de choisir le fichier
+    await page.setInputFiles("[data-testid=file-input]", SAMPLE);
+    await page.click("button:has-text('Envoyer la vidéo')");
+    await expect(page.getByText("Vidéo prête")).toBeVisible({ timeout: 60_000 });
+    await page.click("text=Ouvrir le lecteur de coaching");
+    await page.waitForSelector("[data-testid=coaching-studio]");
+    ids.push(page.url().split("/app/videos/")[1]!.split("?")[0]!);
+  }
+  const res = await page.request.post("/api/matches", {
+    data: { durationSec: 1200, gameMode: "NORMAL", participants: [{ isMe: true, championName: "Ahri", role: "MIDDLE", teamSide: 100, win: true, kills: 3, deaths: 1, assists: 4 }] },
+  });
+  expect(res.status()).toBe(201);
+  const matchId = (await res.json()).match.id as string;
+  // Vidéo A : 00:00 en jeu à 0:00 ; vidéo B : commencée 5 s après le début de partie.
+  for (const [id, offset] of [[ids[0], 0], [ids[1], -5000]] as const) {
+    const r = await page.request.patch(`/api/recordings/${id}`, { data: { matchId, gameStartOffsetMs: offset } });
+    expect(r.ok()).toBe(true);
+  }
+
+  await page.goto(`/app/matches/${matchId}`);
+  await page.click("[data-testid=open-sync]");
+  await page.waitForURL(`**/app/matches/${matchId}/sync`);
+  await expect(page.locator("[data-testid=sync-track]")).toHaveCount(2);
+  await page.waitForFunction(() => [...document.querySelectorAll("video")].every((v) => v.readyState >= 1));
+
+  const times = () => page.locator("video").evaluateAll((vs: HTMLVideoElement[]) => vs.map((v) => v.currentTime));
+  // Déplacement à 8 s de jeu : A à 8 s, B à 3 s
+  await page.locator("[data-testid=sync-seek]").fill("8000");
+  await expect(page.locator("[data-testid=sync-clock]")).toContainText("0:08");
+  await expect.poll(async () => (await times()).map((t) => Math.round(t))).toEqual([8, 3]);
+
+  // Lecture : les deux avancent, l'écart de 5 s est conservé
+  await page.click("[data-testid=sync-play]");
+  await page.waitForTimeout(1500);
+  await page.click("[data-testid=sync-play]");
+  const [a, b] = await times();
+  expect(a!).toBeGreaterThan(8.8);
+  expect(Math.abs(a! - b! - 5)).toBeLessThan(0.35);
+
+  // Avant le début de la vidéo B : signalé « hors plage »
+  await page.locator("[data-testid=sync-seek]").fill("2000");
+  await expect(page.getByText("Cette vidéo ne couvre pas cet instant de la partie")).toHaveCount(1);
+});
