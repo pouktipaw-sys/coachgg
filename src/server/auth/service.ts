@@ -4,12 +4,14 @@ import { HttpError, badRequest } from "../errors";
 import { hashPassword, validatePasswordStrength, verifyPassword } from "./password";
 import { createSession, newToken, sha256 } from "./session";
 import { sendMail } from "../mailer";
+import { consumeEmailInvite } from "../teams/service";
 import { env } from "@/lib/env";
 
 export const registerSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(200),
   password: z.string().max(200),
   displayName: z.string().trim().min(2).max(40),
+  inviteToken: z.string().max(200).optional(),
 });
 
 export const loginSchema = z.object({
@@ -23,6 +25,7 @@ export async function register(raw: unknown) {
   if (weak) throw badRequest(weak);
   const exists = await prisma.user.findUnique({ where: { email: input.email } });
   if (exists) throw new HttpError(409, "email_taken", "Un compte existe déjà avec cet email.");
+  const { inviteToken } = input;
   const user = await prisma.user.create({
     data: {
       email: input.email,
@@ -31,7 +34,8 @@ export async function register(raw: unknown) {
       profile: { create: {} },
     },
   });
-  return { user, session: await createSession(user.id) };
+  const teamInvitation = await consumeEmailInvite(user.id, user.email, inviteToken);
+  return { user, session: await createSession(user.id), teamInvitation };
 }
 
 // Hash factice pour égaliser le temps de réponse si l'email n'existe pas.

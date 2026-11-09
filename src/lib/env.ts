@@ -42,6 +42,13 @@ export const env = {
   get riotApiKey() {
     return process.env.RIOT_API_KEY?.trim() || null;
   },
+  /** URL SMTP (smtp:// ou smtps://). Absente : pas d'envoi réel d'email. */
+  get smtpUrl() {
+    return process.env.SMTP_URL?.trim() || null;
+  },
+  get mailFrom() {
+    return process.env.MAIL_FROM?.trim() || "CoachGG <no-reply@localhost>";
+  },
   get isProd() {
     return process.env.NODE_ENV === "production";
   },
@@ -52,7 +59,7 @@ export function integrationStatus() {
   return {
     riotApi: env.riotApiKey ? "configured" : "not_configured",
     riotSignOn: "not_configured", // RSO : nécessite une application Riot approuvée
-    mailer: "console_dev_only",
+    mailer: env.smtpUrl ? "configured" : env.isProd ? "not_configured" : "console_dev_only",
     desktopCapture: "not_available",
     automaticVideoAnalysis: "experimental", // nécessite Python + OpenCV côté worker
     objectStorage: "local_disk",

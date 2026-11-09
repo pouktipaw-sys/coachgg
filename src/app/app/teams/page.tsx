@@ -19,7 +19,7 @@ export default async function TeamsPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div>
           {memberships.length === 0 ? (
-            <EmptyState title="Aucun groupe" text="Créez un groupe puis invitez vos amis par email (ils doivent avoir un compte CoachGG)." />
+            <EmptyState title="Aucun groupe" text="Créez un groupe puis invitez vos amis par email (ceux qui n’ont pas encore de compte reçoivent un lien d’inscription)." />
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2">
               {memberships.map((m) => (

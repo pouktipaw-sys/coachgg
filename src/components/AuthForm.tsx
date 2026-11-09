@@ -25,11 +25,11 @@ export function AuthForm({ mode }: { mode: Mode }) {
         router.push(params.get("next")?.startsWith("/app") ? params.get("next")! : "/app");
         router.refresh();
       } else if (mode === "register") {
-        await api("/api/auth/register", {
+        const r = await api<{ teamInvitation: boolean }>("/api/auth/register", {
           method: "POST",
-          json: { email: f.get("email"), password: f.get("password"), displayName: f.get("displayName") },
+          json: { email: f.get("email"), password: f.get("password"), displayName: f.get("displayName"), inviteToken: params.get("invite") ?? undefined },
         });
-        router.push("/app/onboarding");
+        router.push(r.teamInvitation ? "/app/invitations" : "/app/onboarding");
         router.refresh();
       } else if (mode === "forgot") {
         const r = await api<{ message: string }>("/api/auth/forgot", { method: "POST", json: { email: f.get("email") } });
@@ -82,6 +82,11 @@ export function AuthForm({ mode }: { mode: Mode }) {
           {mode !== "login" && <p className="mt-1 text-xs text-muted">10 caractères minimum.</p>}
         </div>
       )}
+      {mode === "register" && params.get("invite") && (
+        <p className="rounded-lg border border-accent/30 bg-accent/5 p-2 text-xs" data-testid="invite-notice">
+          Vous avez été invité dans un groupe. Inscrivez-vous avec l&apos;adresse email qui a reçu l&apos;invitation : vous pourrez ensuite l&apos;accepter ou la refuser.
+        </p>
+      )}
       {mode === "register" && (
         <p className="rounded-lg border border-warn/30 bg-warn/5 p-2 text-xs text-warn">
           N&apos;utilisez jamais votre mot de passe Riot ici. CoachGG ne le demande et ne le stocke jamais.
@@ -101,7 +106,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       </div>
       {mode === "forgot" && (
         <p className="text-xs text-muted">
-          Envoi d&apos;emails non configuré dans cette version : en développement, le lien apparaît dans les logs du serveur.
+          Sans serveur SMTP configuré, aucun email n&apos;est envoyé : en développement, le lien apparaît dans les logs du serveur.
         </p>
       )}
     </form>

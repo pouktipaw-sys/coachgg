@@ -166,7 +166,7 @@ test("groupe d'amis : invitation, match commun et MVP", async ({ page, browser }
   await page.waitForURL(/\/app\/teams\/.+/);
   await page.fill("input[name=email]", bobEmail);
   await page.click("button:has-text('Inviter')");
-  await expect(page.getByText("Si un compte CoachGG correspond")).toBeVisible();
+  await expect(page.getByText("Invitation envoyée")).toBeVisible();
 
   // Bob accepte
   await bob.goto("/app/invitations");

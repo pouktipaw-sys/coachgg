@@ -5,8 +5,12 @@ import { HttpError, badRequest, notFound } from "../errors";
 import { requireTeamAdmin, requireTeamMember } from "../permissions";
 import { notify } from "../notifications";
 import { syncTeamReports } from "../scores";
+import { sendMail } from "../mailer";
+import { newToken, sha256 } from "../auth/session";
+import { env } from "@/lib/env";
 
 const INVITE_DAYS = 14;
+const MAX_PENDING_EMAIL_INVITES = 50;
 
 export const teamSchema = z.object({
   name: z.string().trim().min(2).max(50),
@@ -33,23 +37,78 @@ export async function deleteTeam(userId: string, teamId: string) {
   await prisma.team.delete({ where: { id: teamId } });
 }
 
-/** Invitation privée par email d'un compte existant (aucun email n'est envoyé en V1 : notification interne). */
+/**
+ * Invitation privée par email.
+ * • Compte existant : invitation interne + notification + email.
+ * • Pas de compte : email contenant un lien d'inscription à usage unique ; l'invitation
+ *   devient une invitation normale (à accepter) quand la personne s'inscrit avec ce lien.
+ * La réponse est toujours la même : on ne révèle pas si un email possède un compte.
+ */
 export async function inviteToTeam(userId: string, teamId: string, rawEmail: unknown) {
   await requireTeamAdmin(userId, teamId);
   const email = z.string().trim().toLowerCase().email().parse(rawEmail);
-  const invitee = await prisma.user.findUnique({ where: { email } });
-  // Réponse volontairement générique : on ne révèle pas si un email possède un compte.
-  const generic = { ok: true, message: "Si un compte CoachGG correspond à cet email, l'invitation lui a été envoyée." };
-  if (!invitee || invitee.id === userId) return generic;
+  const generic = { ok: true, message: "Invitation envoyée. Si cette personne n'a pas encore de compte, elle recevra un lien d'inscription par email." };
+  const [invitee, team, inviter] = await Promise.all([
+    prisma.user.findUnique({ where: { email } }),
+    prisma.team.findUniqueOrThrow({ where: { id: teamId } }),
+    prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { displayName: true, email: true } }),
+  ]);
+  if (email === inviter.email) return generic;
+  if (!invitee) {
+    await inviteByEmail(userId, inviter.displayName, team, email);
+    return generic;
+  }
   if (await prisma.teamMembership.findUnique({ where: { teamId_userId: { teamId, userId: invitee.id } } })) return generic;
   const pending = await prisma.teamInvitation.findFirst({ where: { teamId, inviteeId: invitee.id, status: "PENDING", expiresAt: { gt: new Date() } } });
   if (pending) return generic;
-  const team = await prisma.team.findUniqueOrThrow({ where: { id: teamId } });
   await prisma.teamInvitation.create({
     data: { teamId, inviterId: userId, inviteeId: invitee.id, expiresAt: new Date(Date.now() + INVITE_DAYS * 86400_000) },
   });
   await notify(invitee.id, { type: "team_invitation", title: "Invitation à un groupe", body: `Vous êtes invité à rejoindre « ${team.name} ».`, link: "/app/invitations" });
+  await sendMail({
+    to: invitee.email,
+    subject: `CoachGG — invitation au groupe « ${team.name} »`,
+    text: `${inviter.displayName} vous invite à rejoindre le groupe « ${team.name} » sur CoachGG.\n\nRépondre à l'invitation : ${env.appUrl}/app/invitations\n\nL'invitation expire dans ${INVITE_DAYS} jours. Rejoindre un groupe ne partage jamais vos vidéos privées.`,
+  });
   return generic;
+}
+
+async function inviteByEmail(inviterId: string, inviterName: string, team: { id: string; name: string }, email: string) {
+  const now = new Date();
+  const active = { teamId: team.id, consumedAt: null, expiresAt: { gt: now } };
+  if (await prisma.teamEmailInvite.findFirst({ where: { ...active, email } })) return; // déjà invitée
+  if ((await prisma.teamEmailInvite.count({ where: active })) >= MAX_PENDING_EMAIL_INVITES)
+    throw new HttpError(429, "too_many_invites", "Trop d'invitations par email en attente pour ce groupe.");
+  const token = newToken();
+  await prisma.teamEmailInvite.create({
+    data: { id: sha256(token), teamId: team.id, email, inviterId, expiresAt: new Date(now.getTime() + INVITE_DAYS * 86400_000) },
+  });
+  await sendMail({
+    to: email,
+    subject: `CoachGG — ${inviterName} vous invite dans « ${team.name} »`,
+    text: `${inviterName} vous invite à rejoindre son groupe « ${team.name} » sur CoachGG, l'outil de coaching League of Legends après match.\n\nCréer votre compte avec ce lien (valable ${INVITE_DAYS} jours, à usage unique) :\n${env.appUrl}/register?invite=${token}\n\nCoachGG ne demande jamais votre mot de passe Riot. Si vous ne connaissez pas cette personne, ignorez cet email.`,
+  });
+}
+
+/**
+ * À l'inscription : le jeton reçu par email prouve la possession de l'adresse.
+ * Il est converti en invitation normale, que la personne accepte ou refuse ensuite.
+ * Un jeton invalide, expiré, déjà utilisé ou destiné à une autre adresse est ignoré.
+ */
+export async function consumeEmailInvite(userId: string, email: string, token: string | undefined) {
+  if (!token) return null;
+  const inv = await prisma.teamEmailInvite.findUnique({ where: { id: sha256(token) } });
+  if (!inv || inv.consumedAt || inv.expiresAt < new Date() || inv.email !== email.toLowerCase()) return null;
+  const team = await prisma.team.findUnique({ where: { id: inv.teamId } });
+  const consumed = await prisma.teamEmailInvite.updateMany({ where: { id: inv.id, consumedAt: null }, data: { consumedAt: new Date() } });
+  if (!team || consumed.count === 0) return null;
+  const inviterStillAdmin = await prisma.teamMembership.findFirst({ where: { teamId: team.id, userId: inv.inviterId, role: "ADMIN" } });
+  if (!inviterStillAdmin) return null;
+  const created = await prisma.teamInvitation.create({
+    data: { teamId: team.id, inviterId: inv.inviterId, inviteeId: userId, expiresAt: new Date(Date.now() + INVITE_DAYS * 86400_000) },
+  });
+  await notify(userId, { type: "team_invitation", title: "Invitation à un groupe", body: `Vous êtes invité à rejoindre « ${team.name} ».`, link: "/app/invitations" });
+  return created;
 }
 
 export async function respondInvitation(userId: string, invitationId: string, accept: boolean) {

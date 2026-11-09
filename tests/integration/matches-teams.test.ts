@@ -9,6 +9,8 @@ import { createGoal, goalProgress } from "@/server/goals";
 import { deleteAccount, exportUserData } from "@/server/account";
 import { hashPassword } from "@/server/auth/password";
 import { syncSession } from "@/server/video/sync";
+import { register } from "@/server/auth/service";
+import { devOutbox } from "@/server/mailer";
 import { makeUser } from "./helpers";
 
 type P = ManualMatchInput["participants"][number];
@@ -204,7 +206,7 @@ describe("groupes, matchs communs et MVP", () => {
     const bob = await makeUser("Bob");
     const team = await createTeam(ana.id, { name: "Gr" });
     const generic = await inviteToTeam(ana.id, team.id, "inconnu@test.dev");
-    expect(generic.message).toMatch(/Si un compte/);
+    expect(generic.message).toMatch(/Invitation envoyée/);
     await inviteToTeam(ana.id, team.id, bob.email);
     const inv = await prisma.teamInvitation.findFirstOrThrow({ where: { inviteeId: bob.id } });
     await expect(respondInvitation(ana.id, inv.id, true)).rejects.toMatchObject({ status: 404 }); // pas son invitation
@@ -283,5 +285,42 @@ describe("objectifs, export et suppression", () => {
 
     const outsider = await makeUser("Zed");
     await expect(syncSession(outsider.id, m.id)).rejects.toMatchObject({ status: 404 });
+  });
+  it("invite par email une personne sans compte : lien à usage unique, adresse vérifiée par le jeton", async () => {
+    const ana = await makeUser("Ana");
+    const team = await createTeam(ana.id, { name: "Duo" });
+    devOutbox.length = 0;
+    const r = await inviteToTeam(ana.id, team.id, "Nouveau@Test.dev");
+    expect(r.message).toMatch(/Invitation envoyée/);
+    await inviteToTeam(ana.id, team.id, "nouveau@test.dev"); // pas de doublon
+    expect(devOutbox).toHaveLength(1);
+    expect(devOutbox[0]!.to).toBe("nouveau@test.dev");
+    expect(devOutbox[0]!.text).not.toMatch(/mot de passe Riot.*demand/i);
+    const token = /invite=([\w-]+)/.exec(devOutbox[0]!.text)![1]!;
+    // le jeton est stocké haché, jamais en clair
+    expect(await prisma.teamEmailInvite.count({ where: { id: token } })).toBe(0);
+
+    // une autre adresse ne peut pas utiliser le jeton
+    const other = await register({ email: "autre@test.dev", password: "Motdepasse-solide-1", displayName: "Autre", inviteToken: token });
+    expect(other.teamInvitation).toBeNull();
+
+    const joined = await register({ email: "nouveau@test.dev", password: "Motdepasse-solide-1", displayName: "Nouveau", inviteToken: token });
+    expect(joined.teamInvitation).not.toBeNull();
+    // invitation normale : rien n'est accepté automatiquement
+    expect(await prisma.teamMembership.count({ where: { teamId: team.id, userId: joined.user.id } })).toBe(0);
+    await respondInvitation(joined.user.id, joined.teamInvitation!.id, true);
+    expect(await prisma.teamMembership.count({ where: { teamId: team.id } })).toBe(2);
+    expect((await prisma.teamEmailInvite.findFirstOrThrow({ where: { email: "nouveau@test.dev" } })).consumedAt).not.toBeNull();
+  });
+
+  it("envoie aussi un email aux comptes existants invités", async () => {
+    const ana = await makeUser("Ana");
+    const bob = await makeUser("Bob");
+    const team = await createTeam(ana.id, { name: "Duo" });
+    devOutbox.length = 0;
+    await inviteToTeam(ana.id, team.id, bob.email);
+    expect(devOutbox.map((m) => m.to)).toEqual([bob.email]);
+    expect(devOutbox[0]!.text).toMatch(/\/app\/invitations/);
+    expect(await prisma.teamEmailInvite.count()).toBe(0);
   });
 });

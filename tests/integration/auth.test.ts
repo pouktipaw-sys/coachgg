@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { prisma } from "@/server/db";
 import { login, register, requestPasswordReset, resetPassword } from "@/server/auth/service";
 import { userFromToken } from "@/server/auth/session";
+import { devOutbox } from "@/server/mailer";
 
 describe("authentification", () => {
   it("inscrit, crée un profil par défaut privé et ouvre une session", async () => {
@@ -30,10 +31,9 @@ describe("authentification", () => {
 
   it("réinitialise le mot de passe via un jeton à usage unique et ferme les sessions", async () => {
     const { session } = await register({ email: "a@test.dev", password: "motdepasse123", displayName: "Alice" });
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    devOutbox.length = 0;
     await requestPasswordReset("a@test.dev");
-    const token = String(log.mock.calls.at(-1)?.[0]).match(/token=([\w-]+)/)?.[1];
-    log.mockRestore();
+    const token = devOutbox.at(-1)?.text.match(/token=([\w-]+)/)?.[1];
     expect(token).toBeTruthy();
     await resetPassword({ token, password: "nouveau-mdp-123" });
     expect(await userFromToken(session.token)).toBeNull();
