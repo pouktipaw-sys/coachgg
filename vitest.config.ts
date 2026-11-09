@@ -21,7 +21,8 @@ export default defineConfig({
           setupFiles: ["tests/integration/setup.ts"],
           // Une seule base de test partagée : exécution séquentielle des fichiers.
           pool: "forks",
-          poolOptions: { forks: { singleFork: true } },
+          maxWorkers: 1,
+          fileParallelism: false,
           testTimeout: 60_000,
           hookTimeout: 60_000,
           env: {
