@@ -20,7 +20,8 @@
     "admin:promote": "tsx scripts/promote-admin.ts",
     "test:analysis": ".venv-analysis/bin/python -m unittest discover -s analysis",
     "benchmark:analysis": "tsx scripts/benchmark-analysis.ts",
-    "agent": "tsx desktop/src/cli.ts"
+    "agent": "tsx desktop/src/cli.ts",
+    "demo:video": "node scripts/demo-video.cjs"
   },
   "engines": {
     "node": ">=20"

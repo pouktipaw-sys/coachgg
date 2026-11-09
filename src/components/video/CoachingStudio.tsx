@@ -135,6 +135,26 @@ export function CoachingStudio({
     return () => cancelAnimationFrame(raf);
   }, [pausedAt]);
 
+  // Métadonnées de la vidéo : dimensions réelles, durée, position de départ (?t=).
+  const metaDone = useRef(false);
+  function onMetadata(v: HTMLVideoElement) {
+    if (metaDone.current) return;
+    metaDone.current = true;
+    if (v.videoWidth) setVideoDims({ w: v.videoWidth, h: v.videoHeight });
+    if (Number.isFinite(v.duration)) setDurationMs(v.duration * 1000);
+    if (initialTimeMs != null && initialTimeMs > 0 && initialTimeMs < v.duration * 1000) {
+      v.currentTime = initialTimeMs / 1000;
+      prevMsRef.current = initialTimeMs;
+      setTMs(initialTimeMs);
+    }
+  }
+  // Si les métadonnées sont arrivées AVANT l'hydratation React, l'événement a été manqué.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v && v.readyState >= 1) onMetadata(v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const seek = useCallback(
     (ms: number) => {
       const v = videoRef.current;
@@ -376,16 +396,7 @@ export function CoachingStudio({
             className="absolute inset-0 h-full w-full object-contain"
             preload="metadata"
             playsInline
-            onLoadedMetadata={(e) => {
-              const v = e.currentTarget;
-              if (v.videoWidth) setVideoDims({ w: v.videoWidth, h: v.videoHeight });
-              if (Number.isFinite(v.duration)) setDurationMs(v.duration * 1000);
-              if (initialTimeMs != null && initialTimeMs > 0 && initialTimeMs < v.duration * 1000) {
-                v.currentTime = initialTimeMs / 1000;
-                prevMsRef.current = initialTimeMs;
-                setTMs(initialTimeMs);
-              }
-            }}
+            onLoadedMetadata={(e) => onMetadata(e.currentTarget)}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             onSeeking={onSeeking}

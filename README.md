@@ -73,6 +73,12 @@ ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -t 20 -c:v libx264 -pix_fmt yu
 
 Administrateur : `npm run admin:promote -- email@exemple.fr`.
 
+Vidéo de démonstration (serveur et worker lancés ; vidéo de partie au choix) :
+
+```bash
+npm run demo:video -- http://localhost:3000 partie.mp4 ./demo-out
+```
+
 Agent PC (enregistrement automatique, voir [docs/DESKTOP.md](docs/DESKTOP.md)) :
 
 ```bash

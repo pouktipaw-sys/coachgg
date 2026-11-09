@@ -130,6 +130,11 @@ test("import vidéo réel, moment de coaching annoté et lecture synchronisée",
   await page.goto(recordingUrl);
   await page.waitForSelector("[data-testid=coaching-studio]");
   await expect(page.getByText("Moments (1)")).toBeVisible();
+
+  // Lien vers un clip à un horodatage (utilisé par le coach) : ouverture au bon moment
+  await page.goto(`${recordingUrl}?t=7000`);
+  await page.waitForSelector("[data-testid=coaching-studio]");
+  await expect(page.locator("[data-testid=time-display]")).toContainText("0:07");
 });
 
 test("fichier invalide refusé avec un message clair", async ({ page }) => {
