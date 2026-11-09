@@ -3,6 +3,8 @@ import { DeleteAccountForm, IdentityForm, ProfileForm } from "@/components/setti
 import { Badge, IntegrationNotice, PageHeader } from "@/components/ui";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
+import { formatRank, type RankEntry } from "@/components/stats";
+import { integrationStatus } from "@/lib/env";
 
 export const metadata = { title: "Paramètres" };
 
@@ -12,6 +14,7 @@ export default async function SettingsPage() {
     prisma.playerProfile.upsert({ where: { userId: user.id }, update: {}, create: { userId: user.id } }),
     prisma.gameIdentity.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
   ]);
+  const riot = integrationStatus().riotApi === "configured";
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader title="Paramètres" subtitle={user.email} />
@@ -30,8 +33,17 @@ export default async function SettingsPage() {
                 <span>
                   {i.gameName}#{i.tagLine} · {i.platform} {i.isPrimary && <Badge tone="info">Principale</Badge>}{" "}
                   <Badge tone={i.verification === "VERIFIED_RSO" ? "ok" : "warn"}>{i.verification === "VERIFIED_RSO" ? "Vérifiée" : "Déclarée, non vérifiée"}</Badge>
+                  <span className="block text-xs text-muted">
+                    {Array.isArray(i.rank) && (i.rank as RankEntry[]).length
+                      ? (i.rank as RankEntry[]).map(formatRank).join(" · ")
+                      : i.rankFetchedAt ? "Aucune partie classée cette saison" : "Rang non récupéré"}
+                    {i.rankFetchedAt && ` (mis à jour le ${i.rankFetchedAt.toLocaleDateString("fr-FR")})`}
+                  </span>
                 </span>
-                <ActionButton url={`/api/identities/${i.id}`} method="DELETE" label="Retirer" className="text-xs text-loss underline" />
+                <span className="flex items-center gap-3">
+                  {riot && <ActionButton url={`/api/identities/${i.id}/rank`} label="Actualiser le rang" className="text-xs underline" />}
+                  <ActionButton url={`/api/identities/${i.id}`} method="DELETE" label="Retirer" className="text-xs text-loss underline" />
+                </span>
               </li>
             ))}
           </ul>

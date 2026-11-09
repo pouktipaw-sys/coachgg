@@ -82,3 +82,36 @@ export function fmtDuration(sec: number) {
 export function fmtNum(n: number | null | undefined) {
   return n == null ? "—" : n.toLocaleString("fr-FR");
 }
+
+export type RankEntry = { queue: string; label: string; tier: string; division: string; lp: number; wins: number; losses: number };
+
+const TIERS: Record<string, string> = {
+  IRON: "Fer", BRONZE: "Bronze", SILVER: "Argent", GOLD: "Or", PLATINUM: "Platine", EMERALD: "Émeraude",
+  DIAMOND: "Diamant", MASTER: "Maître", GRANDMASTER: "Grand maître", CHALLENGER: "Challenger",
+};
+
+export function formatRank(r: RankEntry) {
+  const apex = ["MASTER", "GRANDMASTER", "CHALLENGER"].includes(r.tier);
+  return `${r.label} : ${TIERS[r.tier] ?? r.tier}${apex ? "" : ` ${r.division}`} · ${r.lp} PL · ${r.wins}V/${r.losses}D`;
+}
+
+/** Courbe cumulative par minute (or, CS) — valeurs réelles de la timeline Riot. */
+export function MinuteChart({ values, label, color = "#4c9dff", height = 90 }: { values: number[]; label: string; color?: string; height?: number }) {
+  if (values.length < 2) return null;
+  const w = 360;
+  const max = Math.max(...values, 1);
+  const pts = values.map((v, i) => ({ x: 30 + (i / (values.length - 1)) * (w - 40), y: height - 18 - (v / max) * (height - 28) }));
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  return (
+    <figure>
+      <figcaption className="mb-1 text-xs text-muted">{label} — {values[values.length - 1]!.toLocaleString("fr-FR")} à {values.length - 1} min</figcaption>
+      <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img" aria-label={`${label} par minute : ${values.join(", ")}`}>
+        <line x1={30} x2={w - 10} y1={height - 18} y2={height - 18} stroke="#232b3b" />
+        <text x={0} y={12} fontSize={10} fill="#8b95a8">{max.toLocaleString("fr-FR")}</text>
+        <text x={30} y={height - 4} fontSize={10} fill="#8b95a8">0 min</text>
+        <text x={w - 10} y={height - 4} fontSize={10} fill="#8b95a8" textAnchor="end">{values.length - 1} min</text>
+        <path d={d} fill="none" stroke={color} strokeWidth={2} />
+      </svg>
+    </figure>
+  );
+}

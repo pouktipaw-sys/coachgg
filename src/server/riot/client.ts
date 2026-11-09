@@ -90,6 +90,11 @@ export class RiotClient {
     return this.get<RiotMatch>(`https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/${encodeURIComponent(matchId)}`);
   }
 
+  /** LEAGUE-V4 : rang du joueur (servi par l'hôte du serveur de jeu, ex. euw1). */
+  leagueEntries(puuid: string, platform: string) {
+    return this.get<RiotLeagueEntry[]>(`https://${platform.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`);
+  }
+
   /** MATCH-V5 timeline : événements horodatés (ms depuis le début de la partie). */
   timeline(matchId: string) {
     const platform = matchId.split("_")[0] ?? "EUW1";
@@ -99,8 +104,37 @@ export class RiotClient {
 
 export type RiotTimeline = {
   metadata: { matchId: string; participants: string[] };
-  info: { frames: { timestamp: number; events: { type: string; timestamp: number; victimId?: number; killerId?: number }[] }[] };
+  info: {
+    frames: {
+      timestamp: number;
+      events: { type: string; timestamp: number; victimId?: number; killerId?: number; participantId?: number; itemId?: number }[];
+      participantFrames?: Record<string, { totalGold?: number; minionsKilled?: number; jungleMinionsKilled?: number; level?: number }>;
+    }[];
+  };
 };
+
+export type RiotLeagueEntry = { queueType: string; tier: string; rank: string; leaguePoints: number; wins: number; losses: number };
+
+/** Évolution d'un joueur (or, CS cumulés par minute) et achats, à partir de la timeline. */
+export function participantTimeline(t: RiotTimeline, puuid: string) {
+  const pid = t.metadata.participants.indexOf(puuid) + 1;
+  if (pid <= 0) return null;
+  const gold: number[] = [];
+  const cs: number[] = [];
+  for (const f of t.info.frames) {
+    const pf = f.participantFrames?.[String(pid)];
+    if (!pf) continue;
+    gold.push(pf.totalGold ?? 0);
+    cs.push((pf.minionsKilled ?? 0) + (pf.jungleMinionsKilled ?? 0));
+  }
+  const purchases = t.info.frames
+    .flatMap((f) => f.events)
+    .filter((e) => e.type === "ITEM_PURCHASED" && e.participantId === pid && e.itemId)
+    .map((e) => ({ t: e.timestamp, itemId: e.itemId! }));
+  return { source: "riot_timeline", gold, cs, purchases };
+}
+
+export const RANKED_QUEUES: Record<string, string> = { RANKED_SOLO_5x5: "Classée solo/duo", RANKED_FLEX_SR: "Classée flexible" };
 
 export function riotClient(fetcher?: FetchLike): RiotClient {
   const key = env.riotApiKey;

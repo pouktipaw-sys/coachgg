@@ -3,7 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { badRequest } from "../errors";
 import { afterMatchSaved } from "../matches/service";
-import { convertRiotMatch, riotClient, type RiotClient } from "./client";
+import { RANKED_QUEUES, convertRiotMatch, participantTimeline, riotClient, type RiotClient } from "./client";
+import { notFound } from "../errors";
 
 export async function importRecentMatches(userId: string, count = 5, client: RiotClient = riotClient()) {
   const identity = await prisma.gameIdentity.findFirst({ where: { userId, provider: "riot", isPrimary: true } });
@@ -59,8 +60,34 @@ export async function importRecentMatches(userId: string, count = 5, client: Rio
         },
       },
     });
+    // Évolution minute par minute (or, CS, achats) : facultative, l'import reste valide sans elle.
+    try {
+      const tl = await client.timeline(m.riotMatchId);
+      const parts = await prisma.matchParticipant.findMany({ where: { matchId: created.id }, select: { id: true, puuid: true } });
+      for (const p of parts) {
+        const series = p.puuid ? participantTimeline(tl, p.puuid) : null;
+        if (series) await prisma.matchStatistics.updateMany({ where: { participantId: p.id }, data: { timeline: series } });
+      }
+    } catch {
+      /* timeline indisponible */
+    }
     await afterMatchSaved(created.id);
     results.push({ riotMatchId, status: "imported" });
   }
   return results;
+}
+
+/** Met à jour le rang (LEAGUE-V4) de l'identité Riot de l'utilisateur. */
+export async function refreshRank(userId: string, identityId: string, client: RiotClient = riotClient()) {
+  const identity = await prisma.gameIdentity.findFirst({ where: { id: identityId, userId } });
+  if (!identity) throw notFound("Identité");
+  let puuid = identity.puuid;
+  if (!puuid) {
+    puuid = (await client.accountByRiotId(identity.gameName, identity.tagLine, identity.platform)).puuid;
+  }
+  const entries = await client.leagueEntries(puuid, identity.platform);
+  const rank = entries
+    .filter((e) => RANKED_QUEUES[e.queueType])
+    .map((e) => ({ queue: e.queueType, label: RANKED_QUEUES[e.queueType], tier: e.tier, division: e.rank, lp: e.leaguePoints, wins: e.wins, losses: e.losses }));
+  return prisma.gameIdentity.update({ where: { id: identity.id }, data: { puuid, rank, rankFetchedAt: new Date() } });
 }

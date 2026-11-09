@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, PageHeader } from "@/components/ui";
-import { ComponentBars, MODE_LABELS, RELIABILITY, ROLE_LABELS, ScorePill, fmtDuration, fmtNum } from "@/components/stats";
+import { ComponentBars, MinuteChart, MODE_LABELS, RELIABILITY, ROLE_LABELS, ScorePill, fmtDuration, fmtNum } from "@/components/stats";
 import { requirePageUser } from "@/server/auth/page";
 import { HttpError } from "@/server/errors";
 import { getMatchReport } from "@/server/matches/service";
@@ -27,6 +27,7 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
     throw e;
   }
   const me = match.participants.find((p) => p.userId === user.id) ?? null;
+  const myTimeline = (me?.statistics?.timeline ?? null) as { gold: number[]; cs: number[]; purchases: { t: number; itemId: number }[] } | null;
   const score = me?.scores.find((s) => s.scoreVersionId === CURRENT_SCORE_CONFIG.version) ?? null;
   const [profile, progression, recordings, myTeams] = await Promise.all([
     prisma.playerProfile.findUnique({ where: { userId: user.id } }),
@@ -193,6 +194,26 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
         </div>
       )}
 
+      {myTimeline && (
+        <section className="card space-y-4" data-testid="match-timeline">
+          <h2 className="h2">Évolution dans la partie</h2>
+          <div className="grid gap-6 md:grid-cols-2">
+            <MinuteChart values={myTimeline.gold} label="Or cumulé" color="#fbbf24" />
+            <MinuteChart values={myTimeline.cs} label="CS cumulés" color="#34d399" />
+          </div>
+          {myTimeline.purchases.length > 0 && (
+            <div>
+              <p className="label">Achats</p>
+              <p className="text-xs text-muted">
+                {myTimeline.purchases.slice(0, 40).map((p) => `${formatMs(p.t)} objet n°${p.itemId}`).join(" · ")}
+              </p>
+              <p className="mt-1 text-[11px] text-muted">Identifiants d&apos;objets Riot (les noms nécessitent les données statiques Data Dragon, non intégrées).</p>
+            </div>
+          )}
+          <p className="text-xs text-muted">Source : timeline MATCH-V5 de l&apos;API Riot (une valeur par minute).</p>
+        </section>
+      )}
+
       {teamReports.length > 0 && (
         <section className="card">
           <h2 className="h2">Entre amis</h2>
@@ -243,7 +264,7 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
         ))}
         <p className="mt-3 text-xs text-muted">
           Participation aux éliminations, parts de dégâts et d&apos;objectifs : {Object.keys(COMPONENT_LABELS).length} dimensions définies dans la formule {CURRENT_SCORE_CONFIG.version}.
-          {match.source === "RIOT_API" ? "Objets finaux : importés (identifiants Riot). Évolution minute par minute : non importée (MATCH-V5 timeline non intégrée)." : "Achats et évolution minute par minute : non disponibles pour un match saisi manuellement."}
+          {match.source === "RIOT_API" ? "Source : API Riot (MATCH-V5)." : "Achats et évolution minute par minute : non disponibles pour un match saisi manuellement."}
         </p>
       </section>
     </div>

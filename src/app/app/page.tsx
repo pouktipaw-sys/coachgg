@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge, EmptyState, PageHeader, RECORDING_STATUS } from "@/components/ui";
-import { ROLE_LABELS, ScorePill, Sparkline } from "@/components/stats";
+import { ROLE_LABELS, ScorePill, Sparkline, formatRank, type RankEntry } from "@/components/stats";
+import { integrationStatus } from "@/lib/env";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
 import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
@@ -67,7 +68,12 @@ export default async function Dashboard() {
           <span>
             {identity ? `${identity.gameName}#${identity.tagLine} · ${identity.platform} (déclaré)` : <Link className="underline" href="/app/settings#identite">Associer un Riot ID</Link>}
             {profile?.primaryRole ? ` · ${ROLE_LABELS[profile.primaryRole]}` : ""}
-            {" · Rang : non disponible (nécessite l'API Riot LEAGUE-V4, non intégrée)"}
+            {" · "}
+            {Array.isArray(identity?.rank) && (identity!.rank as RankEntry[]).length
+              ? (identity!.rank as RankEntry[]).map(formatRank).join(" · ")
+              : integrationStatus().riotApi === "configured"
+                ? "Rang : à récupérer dans Paramètres"
+                : "Rang : non disponible (clé API Riot non configurée)"}
           </span>
         }
         actions={
