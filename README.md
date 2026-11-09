@@ -28,7 +28,8 @@ CoachGG n'est ni approuvé ni sponsorisé par Riot Games. Aucun conseil pendant 
 | Administration minimale | ✅ Opérationnel | Tâches, relance, signalements. |
 | Analyse vidéo assistée | 🧪 Expérimentale | Python/OpenCV : écran grisé (mort probable), forte activité, marqueurs rouges minimap avant l'événement → propositions **en brouillon à valider**. Précision mesurable (vérité terrain manuelle ou timeline Riot, banc d'essai). Voir [docs/ANALYSIS.md](docs/ANALYSIS.md). |
 | Application PC (capture) | 🧪 Expérimentale | Agent `npm run agent -- start` : appairage par code, détection de partie, enregistrement de la fenêtre du jeu (FFmpeg), synchronisation automatique, découpage, envoi reprenable. Cœur testé sous Linux ; **capture Windows non encore testée sur un vrai PC**. Voir [docs/DESKTOP.md](docs/DESKTOP.md). |
-| Coach conversationnel | ⏳ Non disponible | Phase 6. |
+| Coach conversationnel | ✅ Mode sans IA · 🧪 mode IA si clé | Réponses sourcées (matchs, clips à l'horodatage, objectifs, groupes), information manquante explicite, signalement. Mode IA : Claude (`claude-opus-5-5`) avec `ANTHROPIC_API_KEY`, citations vérifiées, repli automatique. Voir [docs/COACH.md](docs/COACH.md). |
+| Progression et bilans | ✅ Opérationnel | Forces, difficultés, tendances, par rôle/champion, objectifs accomplis ; bilan hebdomadaire notifié. |
 | Export vidéo annotée, visionnage synchronisé multi-vidéos | ⏳ Non disponible | |
 | Rang (LEAGUE-V4) | ⏳ Non intégré | Affiché « non disponible ». |
 
@@ -98,6 +99,7 @@ createdb coachgg_test && createdb coachgg_e2e
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — variables d'environnement, intégrations externes, déploiement.
 - [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md) — format des annotations et des moments de coaching.
 - [docs/ANALYSIS.md](docs/ANALYSIS.md) — analyse vidéo assistée : pipeline, signaux, règles, revue, limites.
+- [docs/COACH.md](docs/COACH.md) — coach conversationnel, progression, bilans.
 - [docs/SCORING.md](docs/SCORING.md) — note CoachGG, MVP, limites.
 - [docs/DESKTOP.md](docs/DESKTOP.md) — application PC de capture (conception, contraintes).
 - [docs/LEGAL.md](docs/LEGAL.md) — points juridiques et autorisations à faire valider.

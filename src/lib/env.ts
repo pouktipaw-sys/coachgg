@@ -56,5 +56,6 @@ export function integrationStatus() {
     desktopCapture: "not_available",
     automaticVideoAnalysis: "experimental", // nécessite Python + OpenCV côté worker
     objectStorage: "local_disk",
+    coachLlm: process.env.ANTHROPIC_API_KEY ? "configured" : "not_configured",
   } as const;
 }

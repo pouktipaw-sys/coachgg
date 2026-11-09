@@ -52,6 +52,49 @@ model User {
   teamsCreated    Team[]                 @relation("TeamCreator")
   devices         Device[]
   pairingCodes    DevicePairingCode[]
+  coachThreads    CoachThread[]
+}
+
+// ─────────────────────────── Coach conversationnel ───────────────────────────
+// Chaque réponse conserve les sources citées (identifiants des données autorisées
+// au moment de la question), le mode (IA ou règles), le modèle et le coût.
+
+model CoachThread {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  teamId    String? // contexte de groupe éventuel (vérifié à chaque question)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  messages  CoachMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model CoachMessage {
+  id                 String      @id @default(cuid())
+  threadId           String
+  thread             CoachThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role               String // user | assistant
+  content            String
+  citations          Json? // [{ sourceId, kind, title, link, quote? }]
+  missingInformation Json? // string[]
+  followUps          Json? // string[]
+  mode               String? // llm | rules | llm_fallback_rules
+  model              String?
+  sourcesCount       Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  cacheReadTokens    Int?
+  costMicros         Int? // micro-dollars
+  latencyMs          Int?
+  warning            String?
+  reportedAt         DateTime?
+  reportComment      String?
+  createdAt          DateTime    @default(now())
+
+  @@index([threadId, createdAt])
 }
 
 // ─────────────────────────── Application PC ───────────────────────────

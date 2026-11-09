@@ -271,3 +271,33 @@ test("application PC : appairage, enregistrement d'une partie simulée, envoi au
   await expect(page.locator("[data-testid=time-display]")).toContainText("jeu"); // synchronisée automatiquement
   await expect(page.locator("[data-testid=truth-list]")).toContainText("application PC");
 });
+
+test("coach (mode sans IA) et progression : réponse sourcée, lien vers la source", async ({ page }) => {
+  await register(page, "Eli");
+  // Deux matchs saisis via l'API (session du navigateur)
+  for (const vision of [40, 8]) {
+    const r = await page.request.post("/api/matches", {
+      data: {
+        durationSec: 1800,
+        gameMode: "NORMAL",
+        participants: [{ isMe: true, championName: "Ahri", role: "MIDDLE", teamSide: 100, win: true, kills: 6, deaths: 3, assists: 8, creepScore: 230, damageToChampions: 22000, damageToObjectives: 6000, visionScore: vision }],
+        teamTotals: { "100": { kills: 22, damageToChampions: 90000, damageToObjectives: 30000 } },
+      },
+    });
+    expect(r.status()).toBe(201);
+  }
+  await page.goto("/app/progress");
+  await expect(page.locator("[data-testid=weekly-review]")).toContainText("2 partie(s) notée(s)");
+
+  await page.goto("/app/coach");
+  await expect(page.getByText("Mode IA non configuré")).toBeVisible();
+  await page.getByRole("button", { name: "Pourquoi cette note ?" }).click();
+  const answer = page.locator("[data-testid=coach-answer]").last();
+  await expect(answer).toContainText("/10");
+  await expect(answer.locator("[data-testid=coach-mode]")).toContainText("Mode sans IA");
+  await page.getByRole("button", { name: "Quelles erreurs de placement ?" }).click();
+  await expect(page.locator("[data-testid=coach-missing]").last()).toContainText("Aucun moment de coaching validé");
+  await page.locator("[data-testid=coach-citations] a").first().click();
+  await page.waitForURL(/\/app\/matches\//);
+  await expect(page.locator("[data-testid=match-score]")).not.toHaveText("—");
+});

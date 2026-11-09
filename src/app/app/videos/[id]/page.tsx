@@ -18,9 +18,11 @@ export const metadata = { title: "Lecteur de coaching" };
 
 const toPlain = <T,>(x: unknown) => JSON.parse(JSON.stringify(x, (_k, v) => (typeof v === "bigint" ? Number(v) : v))) as T;
 
-export default async function VideoPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function VideoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ t?: string }> }) {
   const user = await requirePageUser();
   const { id } = await params;
+  const tParam = Number((await searchParams).t);
+  const initialTimeMs = Number.isFinite(tParam) && tParam >= 0 ? Math.round(tParam) : null;
   let data;
   try {
     data = await getCoachingData(user.id, id);
@@ -68,6 +70,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           initialMoments={toPlain<RecommendationDTO[]>(data.recommendations)}
           initialAnnotations={toPlain<AnnotationDTO[]>(data.annotations)}
           isOwner={isOwner}
+          initialTimeMs={initialTimeMs}
         />
       ) : (
         <RecordingStatusPanel id={rec.id} status={rec.status} errorMessage={rec.errorMessage} isOwner={isOwner} />

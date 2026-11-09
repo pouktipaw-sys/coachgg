@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { integrationStatus } from "@/lib/env";
 import { automaticPrecision } from "@/server/analysis/review";
 import { evaluationSummary } from "@/server/analysis/evaluation";
+import { coachUsage } from "@/server/coach/service";
 
 export const metadata = { title: "Administration" };
 
@@ -27,7 +28,7 @@ export default async function AdminPage() {
     }),
   ]);
   const integ = integrationStatus();
-  const [precision, evaluation] = await Promise.all([automaticPrecision(), evaluationSummary()]);
+  const [precision, evaluation, coach] = await Promise.all([automaticPrecision(), evaluationSummary(), coachUsage()]);
   return (
     <div className="space-y-6">
       <PageHeader title="Administration" />
@@ -78,6 +79,27 @@ export default async function AdminPage() {
           </table>
         )}
         <p className="mt-1 text-xs text-muted">Comptes agrégés (somme des vrais/faux positifs), sans accès au contenu des vidéos.</p>
+      </section>
+      <section className="card">
+        <h2 className="h2">Coach conversationnel</h2>
+        {coach.rows.length === 0 ? <p className="mt-2 text-sm text-muted">Aucune réponse pour l&apos;instant.</p> : (
+          <table className="mt-2 w-full text-sm">
+            <thead className="text-left text-xs text-muted"><tr><th>Mode</th><th>Réponses</th><th>Jetons entrée</th><th>dont cache</th><th>Jetons sortie</th><th>Coût</th><th>Latence moy.</th></tr></thead>
+            <tbody>
+              {coach.rows.map((r) => (
+                <tr key={r.mode ?? "?"}>
+                  <td className="py-1">{r.mode}</td><td>{r._count._all}</td><td>{r._sum.inputTokens ?? 0}</td><td>{r._sum.cacheReadTokens ?? 0}</td><td>{r._sum.outputTokens ?? 0}</td>
+                  <td>{((r._sum.costMicros ?? 0) / 1e6).toFixed(4)} $</td><td>{r._avg.latencyMs != null ? `${(r._avg.latencyMs / 1000).toFixed(1)} s` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {coach.reported.length > 0 && (
+          <ul className="mt-3 space-y-1 text-xs">
+            {coach.reported.map((m) => <li key={m.id} className="rounded bg-panel-2 p-2"><Badge tone="warn">Signalée</Badge> {m.content.slice(0, 140)}… {m.reportComment && <span className="text-muted">— « {m.reportComment} »</span>}</li>)}
+          </ul>
+        )}
       </section>
       <section className="card overflow-x-auto">
         <h2 className="h2">Dernières tâches</h2>

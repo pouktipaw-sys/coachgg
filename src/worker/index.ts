@@ -6,6 +6,7 @@ import { prisma } from "../server/db";
 import { claimNextJob, completeJob, failJob } from "../server/jobs";
 import { markRecordingFailed, processRecording } from "../server/video/process";
 import { purgeExpiredRecordings } from "../server/retention";
+import { sendWeeklyReviews } from "../server/progress";
 import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
 
 const workerId = `${os.hostname()}:${process.pid}`;
@@ -68,6 +69,9 @@ async function main() {
       await purgeExpiredRecordings()
         .then((n) => n && console.log(`[worker] conservation : ${n} vidéo(s) purgée(s)`))
         .catch((e) => console.error("[worker] purge échouée :", e instanceof Error ? e.message : e));
+      await sendWeeklyReviews()
+        .then((n) => n && console.log(`[worker] bilans hebdomadaires : ${n} notification(s)`))
+        .catch((e) => console.error("[worker] bilans hebdomadaires échoués :", e instanceof Error ? e.message : e));
     }
     const n = await drain(10).catch((e) => {
       console.error("[worker] erreur de boucle :", e instanceof Error ? e.message : e);

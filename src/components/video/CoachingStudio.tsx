@@ -30,11 +30,14 @@ export function CoachingStudio({
   initialMoments,
   initialAnnotations,
   isOwner,
+  initialTimeMs = null,
 }: {
   recording: RecordingDTO;
   initialMoments: RecommendationDTO[];
   initialAnnotations: AnnotationDTO[];
   isOwner: boolean;
+  /** Position de départ (lien « clip à l'horodatage », ex. depuis le coach). */
+  initialTimeMs?: number | null;
 }) {
   const [recording, setRecording] = useState(initialRecording);
   const [moments, setMoments] = useState(initialMoments);
@@ -377,6 +380,11 @@ export function CoachingStudio({
               const v = e.currentTarget;
               if (v.videoWidth) setVideoDims({ w: v.videoWidth, h: v.videoHeight });
               if (Number.isFinite(v.duration)) setDurationMs(v.duration * 1000);
+              if (initialTimeMs != null && initialTimeMs > 0 && initialTimeMs < v.duration * 1000) {
+                v.currentTime = initialTimeMs / 1000;
+                prevMsRef.current = initialTimeMs;
+                setTMs(initialTimeMs);
+              }
             }}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
