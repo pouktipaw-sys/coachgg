@@ -9,11 +9,15 @@ const BEFORE = "#d95926";
 export function RadarChart({ axes, size = 340 }: { axes: Axis[]; size?: number }) {
   const n = axes.length;
   if (n < 3) return <p className="text-sm text-muted">Pas assez de dimensions mesurées pour tracer le profil.</p>;
+  // Marges latérales pour que les étiquettes (« Participation ») ne soient jamais coupées.
+  const PAD_X = 70;
+  const W = size + 2 * PAD_X;
   const c = size / 2;
-  const R = size / 2 - 64;
+  const cx = W / 2;
+  const R = size / 2 - 48;
   const pt = (i: number, v: number) => {
     const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return { x: c + Math.cos(a) * R * (v / 10), y: c + Math.sin(a) * R * (v / 10) };
+    return { x: cx + Math.cos(a) * R * (v / 10), y: c + Math.sin(a) * R * (v / 10) };
   };
   const poly = (sel: (a: Axis) => number | null) =>
     axes.every((a) => sel(a) != null) ? axes.map((a, i) => pt(i, sel(a)!)).map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") : null;
@@ -21,17 +25,17 @@ export function RadarChart({ axes, size = 340 }: { axes: Axis[]; size?: number }
   const beforePoly = poly((a) => a.before);
   return (
     <figure>
-      <svg viewBox={`0 0 ${size} ${size}`} className="mx-auto w-full max-w-sm" role="img" aria-label="Profil de joueur : maintenant comparé à avant" data-testid="radar">
+      <svg viewBox={`0 0 ${W} ${size}`} className="mx-auto w-full max-w-md" role="img" aria-label="Profil de joueur : maintenant comparé à avant" data-testid="radar">
         {[2.5, 5, 7.5, 10].map((v) => (
           <polygon key={v} points={axes.map((_, i) => pt(i, v)).map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#232b3b" strokeWidth={1} />
         ))}
         {axes.map((a, i) => {
           const end = pt(i, 10);
-          const lab = pt(i, 12.6);
+          const lab = pt(i, 11.8);
           return (
             <g key={a.key}>
-              <line x1={c} y1={c} x2={end.x} y2={end.y} stroke="#232b3b" />
-              <text x={lab.x} y={lab.y} fontSize={11} fill="#c9d1e0" textAnchor={Math.abs(lab.x - c) < 8 ? "middle" : lab.x > c ? "start" : "end"} dominantBaseline="middle">
+              <line x1={cx} y1={c} x2={end.x} y2={end.y} stroke="#232b3b" />
+              <text x={lab.x} y={lab.y} fontSize={12} fill="#c9d1e0" textAnchor={Math.abs(lab.x - cx) < 8 ? "middle" : lab.x > cx ? "start" : "end"} dominantBaseline="middle">
                 {a.label}
               </text>
             </g>

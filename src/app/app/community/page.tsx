@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui";
-import { AuthorLine, KIND_LABEL, LikeButton, NewPostForm, ReelsFeed, type PostDTO } from "@/components/community/CommunityBits";
+import { AuthorLine, LikeButton, NewPostForm, ReelsFeed, type PostDTO } from "@/components/community/CommunityBits";
 import { requirePageUser } from "@/server/auth/page";
+import { KIND_LABEL } from "@/lib/community";
 import { prisma } from "@/server/db";
 import { listPosts } from "@/server/community";
 

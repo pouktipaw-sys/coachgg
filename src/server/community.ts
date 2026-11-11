@@ -11,7 +11,6 @@ import { notify } from "./notifications";
 import { requestClipExport } from "./clips";
 
 export const KINDS = ["CLIP", "EXPLOIT", "QUESTION", "DISCUSSION"] as const;
-export const KIND_LABEL: Record<CommunityPostKind, string> = { CLIP: "🎬 Reel", EXPLOIT: "🏆 Exploit", QUESTION: "❓ Conseil demandé", DISCUSSION: "💬 Discussion" };
 
 export const postSchema = z
   .object({

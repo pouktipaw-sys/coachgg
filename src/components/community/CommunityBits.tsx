@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "@/lib/client";
 import { Avatar, RankChip } from "@/components/friends/FriendBits";
+import { KIND_LABEL } from "@/lib/community";
 
 export type PostDTO = {
   id: string;
@@ -20,7 +21,6 @@ export type PostDTO = {
   comments: number;
 };
 
-export const KIND_LABEL: Record<PostDTO["kind"], string> = { CLIP: "🎬 Reel", EXPLOIT: "🏆 Exploit", QUESTION: "❓ Conseil demandé", DISCUSSION: "💬 Discussion" };
 
 export function LikeButton({ post, big = false }: { post: Pick<PostDTO, "id" | "likes" | "liked">; big?: boolean }) {
   const [s, setS] = useState({ liked: post.liked, likes: post.likes });

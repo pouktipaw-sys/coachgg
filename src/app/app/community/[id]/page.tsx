@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
-import { AuthorLine, CommentForm, KIND_LABEL, LikeButton, ReportButton, type PostDTO } from "@/components/community/CommunityBits";
+import { AuthorLine, CommentForm, LikeButton, ReportButton, type PostDTO } from "@/components/community/CommunityBits";
 import { Avatar } from "@/components/friends/FriendBits";
 import { requirePageUser } from "@/server/auth/page";
+import { KIND_LABEL } from "@/lib/community";
 import { HttpError } from "@/server/errors";
 import { getPost } from "@/server/community";
 
