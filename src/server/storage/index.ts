@@ -55,11 +55,13 @@ class LocalDiskStorage implements StorageDriver {
   async truncate(key: string, length: number) {
     const p = this.localPath(key);
     await fs.mkdir(path.dirname(p), { recursive: true });
-    const fh = await fs.open(p, "a+");
+    // Pas de fichier ouvert en mode « ajout » : sous Windows, il ne peut pas être tronqué (EPERM).
     try {
-      await fh.truncate(length);
-    } finally {
-      await fh.close();
+      await fs.truncate(p, length);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      await fs.writeFile(p, new Uint8Array(0));
+      if (length > 0) await fs.truncate(p, length);
     }
   }
 
