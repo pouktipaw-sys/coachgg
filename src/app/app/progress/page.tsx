@@ -2,14 +2,18 @@ import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { ROLE_LABELS, Sparkline } from "@/components/stats";
 import { requirePageUser } from "@/server/auth/page";
-import { progressProfile, reviewSummary, weeklyReview } from "@/server/progress";
+import { impactProfile, progressProfile, reviewSummary, weeklyReview } from "@/server/progress";
+import { RadarChart } from "@/components/RadarChart";
+import { IMPACT_LABELS, type ImpactKind } from "@/lib/impact";
 import { CURRENT_SCORE_CONFIG } from "@/lib/scoring/config";
 
 export const metadata = { title: "Progression" };
 
+const SHORT: Record<string, string> = { resources: "Farm", participation: "Participation", damage: "Dégâts", risk: "Survie", vision: "Vision", objectives: "Objectifs" };
+
 export default async function ProgressPage() {
   const user = await requirePageUser();
-  const [p, week] = await Promise.all([progressProfile(user.id), weeklyReview(user.id)]);
+  const [p, week, impact] = await Promise.all([progressProfile(user.id), weeklyReview(user.id), impactProfile(user.id)]);
   if (p.total === 0)
     return (
       <div>
@@ -29,6 +33,35 @@ export default async function ProgressPage() {
         <h2 className="h2">Bilan des 7 derniers jours</h2>
         {week ? <p className="mt-2 text-sm">{reviewSummary(week)}.</p> : <p className="mt-2 text-sm text-muted">Aucune activité cette semaine.</p>}
       </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="card space-y-3" data-testid="impact">
+          <h2 className="h2">Porteur ou porté ?</h2>
+          <p className={`text-lg font-semibold ${impact.verdict.kind === "CARRY" ? "text-win" : impact.verdict.kind === "CARRIED" ? "text-warn" : ""}`} data-testid="impact-verdict">
+            {impact.verdict.title}
+          </p>
+          <p className="text-sm">{impact.verdict.detail}</p>
+          {impact.n > 0 && (
+            <ul className="grid grid-cols-2 gap-2 text-sm">
+              {(Object.keys(IMPACT_LABELS) as ImpactKind[]).map((k) => (
+                <li key={k} className="rounded-lg bg-panel-2 px-3 py-2">
+                  <span className="font-mono text-lg">{impact.counts[k]}</span> <span className="text-xs text-muted">{IMPACT_LABELS[k]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-muted">
+            Sur tes {impact.n} dernières parties où au moins 2 coéquipiers sont notés : ta note CoachGG comparée à leur moyenne (écart d&apos;1 point ou plus = différence nette).
+            {impact.mvpVotes > 0 && ` Tes coéquipiers t'ont aussi donné ${impact.mvpVotes} vote(s) MVP.`}
+          </p>
+        </section>
+        <section className="card">
+          <h2 className="h2">Profil de joueur</h2>
+          <RadarChart
+            axes={p.trends.map((t) => ({ key: t.key, label: SHORT[t.key] ?? t.label, now: t.avg, before: t.previous }))}
+          />
+        </section>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="card lg:col-span-2">

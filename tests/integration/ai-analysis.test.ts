@@ -40,6 +40,7 @@ function fakeClaude(calls: Req[]) {
                   saferLabel: "Reculer vers la tourelle",
                   danger: { x: 0.7, y: 0.4, r: 0.12 },
                   enemies: [{ x: 0.72, y: 0.38 }],
+                  clicks: [{ x: 0.3, y: 0.75 }],
                 },
               }
             : {
@@ -78,7 +79,7 @@ describe.skipIf(!available)("analyse IA (faux client Claude)", () => {
     const rec = await prisma.recommendation.findFirstOrThrow({ where: { recordingId: id, title: "Mort en avançant seul sans vision" }, include: { annotations: true, observations: true } });
     expect(rec).toMatchObject({ status: "DRAFT", provenance: "AUTOMATIC", kind: "MISTAKE", category: "VISION", confidence: "MEDIUM", advice: "Avant d'avancer, regarde la minimap et pose une balise." });
     expect(rec.analysisVersion).toBe("ia-1.0.0 (claude-opus-5-5)");
-    expect(rec.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["highlight:enemy", "path:actual", "path:alternative", "zone:danger"]);
+    expect(rec.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["click:alternative", "highlight:enemy", "path:actual", "path:alternative", "zone:danger"]);
     const alt = rec.annotations.find((a) => a.style === "alternative")!;
     expect((alt.geometry as { points: { x: number; y: number }[] }).points[2]).toEqual({ x: 1, y: 0 }); // coordonnées bornées
     expect(alt.label).toBe("Reculer vers la tourelle");

@@ -2,6 +2,7 @@
 import { prisma } from "./db";
 import { notify } from "./notifications";
 import { COMPONENT_LABELS, CURRENT_SCORE_CONFIG, type ComponentKey } from "@/lib/scoring/config";
+import { impactSummary } from "@/lib/impact";
 
 type Comp = { key: ComponentKey; available: boolean; score: number | null };
 type Row = { date: Date; role: string | null; champion: string; win: boolean; overall: number; comps: Comp[]; matchId: string };
@@ -126,4 +127,32 @@ export async function sendWeeklyReviews(now = new Date()) {
     sent++;
   }
   return sent;
+}
+
+/** Porteur ou porté : ta note comparée à celle de tes coéquipiers sur tes 20 dernières parties notées. */
+export async function impactProfile(userId: string, take = 20) {
+  const mine = await prisma.matchParticipant.findMany({
+    where: { userId, match: { isDemo: false }, scores: { some: { scoreVersionId: CURRENT_SCORE_CONFIG.version, overall: { not: null } } } },
+    include: {
+      scores: { where: { scoreVersionId: CURRENT_SCORE_CONFIG.version } },
+      match: { select: { gameStartAt: true, createdAt: true } },
+      _count: { select: { votesReceived: { where: { mvp: true } } } },
+    },
+    orderBy: [{ match: { gameStartAt: "desc" } }, { createdAt: "desc" }],
+    take,
+  });
+  const mates = await prisma.matchParticipant.findMany({
+    where: { matchId: { in: mine.map((m) => m.matchId) }, id: { notIn: mine.map((m) => m.id) } },
+    select: { matchId: true, teamSide: true, scores: { where: { scoreVersionId: CURRENT_SCORE_CONFIG.version }, select: { overall: true } } },
+  });
+  return impactSummary(
+    mine.map((m) => ({
+      matchId: m.matchId,
+      win: m.win,
+      myScore: m.scores[0]!.overall!,
+      mateScores: mates.filter((x) => x.matchId === m.matchId && x.teamSide === m.teamSide).map((x) => x.scores[0]?.overall).filter((s): s is number => s != null),
+      killParticipation: null,
+      mvpVotes: m._count.votesReceived,
+    })),
+  );
 }

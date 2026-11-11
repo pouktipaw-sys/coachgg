@@ -47,6 +47,7 @@ export const MomentReviewSchema = z.object({
     saferLabel: z.string().describe("Étiquette du trajet conseillé, 3 à 5 mots"),
     danger: z.object({ x: z.number(), y: z.number(), r: z.number() }).nullable().describe("Zone dangereuse visible, r en fraction de la largeur"),
     enemies: z.array(P).describe("Ennemis visibles sur l'image de décision (5 max)"),
+    clicks: z.array(P).describe("Où cliquer (clic droit) pour suivre l'alternative, dans l'ordre (0 à 3 points)"),
   }),
 });
 export type MomentReview = z.infer<typeof MomentReviewSchema>;
@@ -58,6 +59,7 @@ Règles :
 - Une mort n'est pas forcément une erreur (échange favorable, objectif, sacrifice utile). Utilise « MISTAKE » seulement si une décision évitable est clairement visible.
 - Confiance « MEDIUM » au maximum, « LOW » dès que l'image est ambiguë.
 - Coordonnées normalisées sur l'image de décision : (0,0) en haut à gauche, (1,1) en bas à droite. Le champion du joueur est en général au centre de l'écran.
+- « clicks » montre le geste à la souris : où le joueur aurait dû faire ses clics droits pour suivre l'alternative (ex. un clic loin derrière, vers la tourelle).
 - L'alternative et le conseil doivent être concrets et actionnables (se replacer, attendre la vague, utiliser la minimap, garder un sort de fuite…), en français, au tutoiement, phrases courtes.
 - Si les images ne montrent pas clairement une partie (menu, chargement, image illisible) : readable = false et listes de dessin vides.`;
 
@@ -149,6 +151,8 @@ export function proposalFromReview(base: Proposal, r: MomentReview, times: numbe
     annotations.push({ type: "path", style: "alternative", space: "FRAME", ...win(decisionMs, decisionMs + 3000), geometry: { points: d.saferPath.slice(0, 4).map(cp) }, label: (d.saferLabel || "Alternative").slice(0, 40) });
   if (d.danger)
     annotations.push({ type: "zone", style: "danger", space: "FRAME", ...win(decisionMs - 1500, decisionMs + 2000), geometry: { center: cp(d.danger), r: Math.min(0.4, Math.max(0.03, d.danger.r)) }, label: "Zone dangereuse" });
+  for (const [k, c] of d.clicks.slice(0, 3).entries())
+    annotations.push({ type: "click", style: "alternative", space: "FRAME", ...win(decisionMs + k * 700, decisionMs + 3000), geometry: { at: cp(c) }, label: k === 0 ? "Clic conseillé" : null });
   for (const e of d.enemies.slice(0, 5))
     annotations.push({ type: "highlight", style: "enemy", space: "FRAME", ...win(decisionMs - 1500, decisionMs + 1500), geometry: { at: cp(e), r: 0.04 }, label: "Ennemi" });
   return {
