@@ -34,7 +34,7 @@ export const env = {
   },
   /** Interpréteur Python de l'analyse vidéo (venv recommandé : .venv-analysis). */
   get pythonBin() {
-    return process.env.ANALYSIS_PYTHON ?? ".venv-analysis/bin/python";
+    return process.env.ANALYSIS_PYTHON ?? (process.platform === "win32" ? ".venv-analysis\\Scripts\\python.exe" : ".venv-analysis/bin/python");
   },
   get analysisTimeoutSec() {
     return int("ANALYSIS_TIMEOUT_SEC", 1800);
