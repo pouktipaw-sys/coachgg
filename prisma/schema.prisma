@@ -207,6 +207,9 @@ model PlayerProfile {
   defaultVideoPrivate   Boolean          @default(true)
   shareStatsWithTeams   Boolean          @default(true)
   retentionDays         Int? // null = conserver jusqu'à suppression manuelle
+  // Analyse automatique : découpage en clips des séquences détectées
+  autoClipDeaths        Boolean          @default(true)
+  autoClipFights        Boolean          @default(false)
   onboardingCompletedAt DateTime?
   updatedAt             DateTime         @updatedAt
 }
@@ -356,6 +359,7 @@ enum MomentKind {
   FIGHT // engagement
   MISSED_OPPORTUNITY
   INTERESTING // situation intéressante sans mort
+  DEATH // mort (détectée ou marquée) — pas forcément une erreur
 }
 
 enum Provenance {

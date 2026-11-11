@@ -99,7 +99,7 @@ export const TYPE_META: Record<AnnotationType, { label: string; points: number |
 
 // ─────────────────────────── Moments de coaching ───────────────────────────
 
-export const MOMENT_KINDS = ["MISTAKE", "GOOD_ACTION", "OBJECTIVE", "FIGHT", "MISSED_OPPORTUNITY", "INTERESTING"] as const;
+export const MOMENT_KINDS = ["MISTAKE", "GOOD_ACTION", "OBJECTIVE", "FIGHT", "MISSED_OPPORTUNITY", "INTERESTING", "DEATH"] as const;
 export const CATEGORIES = [
   "POSITIONING",
   "MOVEMENT",
@@ -121,6 +121,7 @@ export const KIND_LABELS: Record<(typeof MOMENT_KINDS)[number], string> = {
   FIGHT: "Engagement",
   MISSED_OPPORTUNITY: "Occasion manquée",
   INTERESTING: "Situation intéressante",
+  DEATH: "Mort",
 };
 
 export const CATEGORY_LABELS: Record<(typeof CATEGORIES)[number], string> = {

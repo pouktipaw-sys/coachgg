@@ -53,6 +53,7 @@ export function ClipCard({ clip, me }: { clip: ClipDTO; me: string }) {
         <div className="min-w-0">
           <Link className="font-medium hover:underline" href={`/app/videos/${c.recording.id}?t=${c.startMs}`}>{c.title}</Link>
           <p className="text-xs text-muted">
+            {c.provenance === "AUTOMATIC" && <span className="badge mr-1 border-warn/40 text-warn" title="Découpé automatiquement par l'analyse">auto</span>}
             {KIND_LABELS[c.kind]} · {formatMs(c.startMs)}–{formatMs(c.endMs)} ({Math.round((c.endMs - c.startMs) / 1000)} s) · {c.recording.title}
             {c.recording.ownerId !== me ? ` · partagée par ${c.recording.owner.displayName}` : ""}
           </p>

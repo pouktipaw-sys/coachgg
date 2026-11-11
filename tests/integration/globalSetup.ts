@@ -2,13 +2,19 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
-export default function setup() {
+export default async function setup() {
   const url = process.env.TEST_DATABASE_URL ?? "postgresql://coachgg:coachgg@localhost:5432/coachgg_test";
   if (!/test/.test(url)) throw new Error("Refus : la base de test doit contenir « test » dans son nom.");
   execSync("npx prisma migrate deploy", {
     stdio: "pipe",
     env: { ...process.env, DATABASE_URL: url },
   });
+  // Serveur en heure locale (cas courant sous Windows) : l'application doit rester correcte.
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  await client.query(`ALTER DATABASE "${new URL(url).pathname.slice(1)}" SET timezone TO 'Pacific/Kiritimati'`);
+  await client.end();
   // Fixtures vidéo réelles générées avec FFmpeg (si absentes).
   const dir = path.resolve(__dirname, "../fixtures/generated");
   mkdirSync(dir, { recursive: true });

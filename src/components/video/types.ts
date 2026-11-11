@@ -23,7 +23,7 @@ export type Alternative = { label: string; conditions: string; limits: string };
 
 export type RecommendationDTO = {
   id: string;
-  kind: "MISTAKE" | "GOOD_ACTION" | "OBJECTIVE" | "FIGHT" | "MISSED_OPPORTUNITY" | "INTERESTING";
+  kind: "MISTAKE" | "GOOD_ACTION" | "OBJECTIVE" | "FIGHT" | "MISSED_OPPORTUNITY" | "INTERESTING" | "DEATH";
   category: string;
   title: string;
   contextStartMs: number;

@@ -11,7 +11,8 @@ function createClient() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL n'est pas défini.");
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString, max: Number(process.env.DATABASE_POOL_MAX ?? 10) }),
+    // Session en UTC, quel que soit le fuseau du serveur PostgreSQL (Windows : heure locale).
+    adapter: new PrismaPg({ connectionString, max: Number(process.env.DATABASE_POOL_MAX ?? 10), options: "-c TimeZone=UTC" }),
     log: process.env.PRISMA_LOG ? ["query", "warn", "error"] : ["warn", "error"],
   });
 }

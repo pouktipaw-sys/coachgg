@@ -14,6 +14,8 @@ type Profile = {
   language: string;
   shareStatsWithTeams: boolean;
   retentionDays: number | null;
+  autoClipDeaths: boolean;
+  autoClipFights: boolean;
 };
 
 export function ProfileForm({ displayName, profile, onboarding = false }: { displayName: string; profile: Profile; onboarding?: boolean }) {
@@ -38,6 +40,8 @@ export function ProfileForm({ displayName, profile, onboarding = false }: { disp
               explanationDensity: f.get("explanationDensity"),
               language: f.get("language"),
               shareStatsWithTeams: f.get("shareStatsWithTeams") === "on",
+              autoClipDeaths: f.get("autoClipDeaths") === "on",
+              autoClipFights: f.get("autoClipFights") === "on",
               retentionDays: f.get("retentionDays") ? Number(f.get("retentionDays")) : null,
               completeOnboarding: onboarding || undefined,
             },
@@ -117,6 +121,20 @@ export function ProfileForm({ displayName, profile, onboarding = false }: { disp
           <span className="block text-xs text-muted">Les vidéos ne sont jamais partagées automatiquement, quel que soit ce réglage.</span>
         </span>
       </label>
+      <fieldset className="space-y-2 rounded-lg border border-line p-3 text-sm">
+        <legend className="px-1 text-xs text-muted">Analyse automatique après chaque import (expérimentale)</legend>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" name="autoClipDeaths" defaultChecked={profile.autoClipDeaths} className="mt-1" data-testid="pref-auto-deaths" />
+          <span>Découper chaque mort détectée en clip (contexte avant + 3 s après)</span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" name="autoClipFights" defaultChecked={profile.autoClipFights} className="mt-1" />
+          <span>
+            Découper aussi les combats probables (forte activité à l&apos;écran)
+            <span className="block text-xs text-muted">Détection approximative : certains clips seront de simples mouvements de caméra.</span>
+          </span>
+        </label>
+      </fieldset>
       {msg && <p role="status" className="text-sm text-muted">{msg}</p>}
       <button className="btn-primary">{onboarding ? "Terminer" : "Enregistrer"}</button>
     </form>

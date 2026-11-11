@@ -19,6 +19,7 @@ export type AnalysisJobDTO = {
     version?: string;
     contextSec?: number;
     created?: number;
+    clipsCreated?: number;
     warnings?: string[];
     steps?: { name: string; status: string; ms: number; note?: string }[];
   } | null;
@@ -35,11 +36,21 @@ const STATUS: Record<string, { label: string; tone: string }> = {
 };
 const ICON: Record<string, string> = { ok: "✓", skipped: "–", warning: "!", failed: "✕" };
 
-export function AnalysisPanel({ recordingId, initial }: { recordingId: string; initial: AnalysisJobDTO }) {
+export function AnalysisPanel({
+  recordingId,
+  initial,
+  clipDefaults = { deaths: true, fights: false },
+}: {
+  recordingId: string;
+  initial: AnalysisJobDTO;
+  clipDefaults?: { deaths: boolean; fights: boolean };
+}) {
   const router = useRouter();
   const [job, setJob] = useState<AnalysisJobDTO>(initial);
   const [ctx, setCtx] = useState<number>(initial?.result?.contextSec ?? 10);
   const [msg, setMsg] = useState<string | null>(null);
+  const [clipDeaths, setClipDeaths] = useState(clipDefaults.deaths);
+  const [clipFights, setClipFights] = useState(clipDefaults.fights);
   const active = job && (job.status === "PENDING" || job.status === "RUNNING");
 
   useEffect(() => {
@@ -67,7 +78,7 @@ export function AnalysisPanel({ recordingId, initial }: { recordingId: string; i
   async function launch() {
     setMsg(null);
     try {
-      await api(`/api/recordings/${recordingId}/analyze`, { method: "POST", json: { contextSec: ctx } });
+      await api(`/api/recordings/${recordingId}/analyze`, { method: "POST", json: { contextSec: ctx, autoClips: { deaths: clipDeaths, fights: clipFights } } });
       setJob((j) => ({ ...(j ?? { id: "", attempts: 0, maxAttempts: 2, error: null, processingMs: null, costMicros: 0, finishedAt: null, result: null }), status: "PENDING", progress: 0 }));
     } catch (e) {
       setMsg(errorMessage(e));
@@ -107,12 +118,28 @@ export function AnalysisPanel({ recordingId, initial }: { recordingId: string; i
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-4 text-xs">
+        <span className="text-muted">Découper automatiquement en clips :</span>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={clipDeaths} onChange={(e) => setClipDeaths(e.target.checked)} disabled={!!active} data-testid="auto-clip-deaths" /> les morts
+        </label>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={clipFights} onChange={(e) => setClipFights(e.target.checked)} disabled={!!active} /> les combats probables
+        </label>
+      </div>
+
       {job && st && (
         <div className="space-y-2 text-sm" aria-live="polite">
           <p>
             <span className={`font-medium ${st.tone}`} data-testid="analysis-status">{st.label}</span>
             {active && ` — ${job.progress} %`}
             {job.result?.created != null && !active && ` · ${job.result.created} proposition(s)`}
+            {!!job.result?.clipsCreated && !active && (
+              <>
+                {" · "}
+                <a className="underline" href={`/app/clips?recordingId=${recordingId}`} data-testid="auto-clips-link">{job.result.clipsCreated} clip(s) créé(s)</a>
+              </>
+            )}
             {job.processingMs != null && !active && <span className="text-muted"> · {(job.processingMs / 1000).toFixed(1)} s de traitement · coût externe {job.costMicros ? `${(job.costMicros / 1e6).toFixed(4)} €` : "nul (traitement local)"}</span>}
           </p>
           {active && (

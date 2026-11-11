@@ -11,13 +11,16 @@ type P = { id: string };
 /** Lance ou relance l'analyse assistée (durée de contexte réglable). */
 export const POST = authed<P>(async (req, user, { id }) => {
   await requireRecordingOwner(user.id, id);
-  const { contextSec } = z
-    .object({ contextSec: z.number().int().refine((n) => (CONTEXT_CHOICES as readonly number[]).includes(n)).default(10) })
+  const { contextSec, autoClips } = z
+    .object({
+      contextSec: z.number().int().refine((n) => (CONTEXT_CHOICES as readonly number[]).includes(n)).default(10),
+      autoClips: z.object({ deaths: z.boolean(), fights: z.boolean() }).optional(),
+    })
     .parse(await readJson(req));
   if (!rateLimit(`analyze:${user.id}`, 20, 3600_000)) throw new HttpError(429, "rate_limited", "Trop d'analyses lancées récemment.");
   const rec = await prisma.recording.findUniqueOrThrow({ where: { id }, select: { status: true } });
   if (rec.status !== "READY") throw new HttpError(409, "not_ready", "La vidéo doit être prête avant l'analyse.");
-  const job = await requestAnalysis(id, contextSec);
+  const job = await requestAnalysis(id, contextSec, autoClips);
   return json({ job: { id: job.id, status: job.status } }, 202);
 });
 

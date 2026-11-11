@@ -12,19 +12,26 @@ import { enqueueJob, JobCancelledError, PermanentJobError, retryJob, setJobProgr
 import { notify } from "../notifications";
 import { AnalyzerError, AnalyzerUnavailableError, analyzerAvailable, runAnalyzer } from "./runner";
 import { buildProposals, RULES_VERSION } from "@/lib/analysis/rules";
+import { autoClipsFrom } from "@/lib/analysis/autoClips";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 type Step = { name: string; status: "ok" | "skipped" | "warning" | "failed"; ms: number; note?: string };
 
 export const CONTEXT_CHOICES = [6, 10, 15] as const;
 
-/** Met en file (ou relance) l'analyse d'une vidéo prête. Idempotent : une tâche par vidéo. */
-export async function requestAnalysis(recordingId: string, contextSec = 10) {
+export type AutoClipChoice = { deaths: boolean; fights: boolean };
+
+/**
+ * Met en file (ou relance) l'analyse d'une vidéo prête. Idempotent : une tâche par vidéo.
+ * `autoClips` absent → préférences du profil du propriétaire au moment de l'analyse.
+ */
+export async function requestAnalysis(recordingId: string, contextSec = 10, autoClips?: AutoClipChoice) {
   const key = `analyze:${recordingId}`;
-  const job = await enqueueJob({ type: "ANALYZE_RECORDING", idempotencyKey: key, recordingId, payload: { contextSec }, maxAttempts: 2 });
+  const payload = autoClips ? { contextSec, autoClips } : { contextSec };
+  const job = await enqueueJob({ type: "ANALYZE_RECORDING", idempotencyKey: key, recordingId, payload, maxAttempts: 2 });
   if (job.status === "RUNNING") return job;
-  if (job.status !== "PENDING" || JSON.stringify(job.payload) !== JSON.stringify({ contextSec })) {
-    await prisma.analysisJob.update({ where: { id: job.id }, data: { payload: { contextSec }, version: RULES_VERSION } });
+  if (job.status !== "PENDING" || JSON.stringify(job.payload) !== JSON.stringify(payload)) {
+    await prisma.analysisJob.update({ where: { id: job.id }, data: { payload, version: RULES_VERSION } });
     return retryJob(job.id);
   }
   return job;
@@ -196,19 +203,43 @@ export async function analyzeRecording(job: AnalysisJob) {
       return { value: n, note: `${n} proposition(s) enregistrée(s) en brouillon.` };
     });
 
+    // 11. Découpage automatique en clips (morts, et combats si demandé) — remplace les clips
+    //     automatiques non retouchés de l'analyse précédente ; ceux que l'utilisateur a modifiés restent.
+    const clipsCreated = await step<number>("Découpage automatique en clips", async () => {
+      let choice: AutoClipChoice | undefined = (job.payload as { autoClips?: AutoClipChoice } | null)?.autoClips;
+      if (!choice) {
+        const prof = await prisma.playerProfile.findUnique({ where: { userId: rec.ownerId }, select: { autoClipDeaths: true, autoClipFights: true } });
+        choice = { deaths: prof?.autoClipDeaths ?? true, fights: prof?.autoClipFights ?? false };
+      }
+      if (!choice.deaths && !choice.fights) return { value: 0, status: "skipped", note: "Désactivé dans les réglages." };
+      await prisma.clip.deleteMany({ where: { recordingId: rec.id, provenance: "AUTOMATIC", favorite: false, personalNote: null, exportStatus: null } });
+      const kept = await prisma.clip.findMany({ where: { recordingId: rec.id }, select: { kind: true, startMs: true, endMs: true } });
+      const wanted = autoClipsFrom(out.events, rec.durationMs!, rec.gameStartOffsetMs, { ...choice, contextSec });
+      // Un clip conservé (favori, annoté, exporté, ou manuel) qui contient déjà l'événement suffit.
+      const fresh = wanted.filter((c) => !kept.some((k) => k.kind === c.kind && k.startMs <= c.eventMs && k.endMs >= c.eventMs));
+      if (fresh.length)
+        await prisma.clip.createMany({
+          data: fresh.map((c) => ({ recordingId: rec.id, ownerId: rec.ownerId, title: c.title, kind: c.kind, startMs: c.startMs, endMs: c.endMs, provenance: "AUTOMATIC" as const })),
+        });
+      const deaths = fresh.filter((c) => c.kind === "DEATH").length;
+      return { value: fresh.length, note: `${fresh.length} clip(s) créé(s) : ${deaths} mort(s), ${fresh.length - deaths} combat(s).` };
+    });
+
     const partial = steps.some((s) => s.status === "warning");
     const status: "NEEDS_REVIEW" | "PARTIAL" | "SUCCEEDED" = created > 0 ? "NEEDS_REVIEW" : partial ? "PARTIAL" : "SUCCEEDED";
     await notify(rec.ownerId, {
       type: "analysis_done",
       title: "Analyse assistée terminée",
-      body: created > 0 ? `« ${rec.title} » : ${created} proposition(s) à valider.` : `« ${rec.title} » : aucune séquence détectée.`,
+      body:
+        (created > 0 ? `« ${rec.title} » : ${created} proposition(s) à valider.` : `« ${rec.title} » : aucune proposition.`) +
+        (clipsCreated > 0 ? ` ${clipsCreated} clip(s) ajouté(s) à votre bibliothèque.` : ""),
       link: `/app/videos/${rec.id}`,
     });
     // Détections brutes conservées (sans les planches) : base de l'évaluation de précision.
     const detections = out.events.map((e) => ({ type: e.type, startMs: e.startMs, endMs: e.endMs, confidence: e.confidence }));
     return {
       status,
-      result: { version: RULES_VERSION, contextSec, steps, created, warnings: out.warnings, baselines: out.baselines, sampling: out.sampling, detections },
+      result: { version: RULES_VERSION, contextSec, steps, created, clipsCreated, warnings: out.warnings, baselines: out.baselines, sampling: out.sampling, detections },
     };
   } catch (e) {
     // Trace des étapes conservée même en cas d'échec.

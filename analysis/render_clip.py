@@ -43,7 +43,14 @@ STYLE_LABEL = {
 
 
 def font(size: int, bold: bool = False):
-    for p in (os.environ.get("RENDER_FONT", ""), "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:/Windows/Fonts/arial.ttf"):
+    candidates = (
+        os.environ.get("RENDER_FONT", ""),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    )
+    for p in candidates:
         if p and os.path.exists(p):
             return ImageFont.truetype(p, size)
     return ImageFont.load_default()

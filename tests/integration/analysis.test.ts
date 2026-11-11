@@ -29,6 +29,7 @@ describe.skipIf(!available)("analyse vidéo assistée (Python/OpenCV réels)", (
       "Extraction des signaux et sélection des séquences",
       "Propositions (règles auto-0.1.0)",
       "Annotations et enregistrement pour revue",
+      "Découpage automatique en clips",
     ]);
     expect(res.warnings.join(" ")).toMatch(/minimap non définie/);
     expect(job.processingMs).toBeGreaterThan(0);
@@ -47,6 +48,33 @@ describe.skipIf(!available)("analyse vidéo assistée (Python/OpenCV réels)", (
     expect(grey.annotations.every((a) => a.provenance === "AUTOMATIC")).toBe(true);
     const notif = await prisma.notification.findFirst({ where: { userId: u.id, type: "analysis_done" } });
     expect(notif?.body).toMatch(/à valider/);
+
+    // Découpage automatique (réglage par défaut : les morts) : clip de 10 s avant l'écran grisé à 3 s après
+    const clips = await prisma.clip.findMany({ where: { recordingId: id } });
+    expect(clips).toHaveLength(1);
+    expect(clips[0]).toMatchObject({ kind: "DEATH", provenance: "AUTOMATIC", ownerId: u.id });
+    expect(Math.abs(clips[0]!.startMs - 3000)).toBeLessThanOrEqual(600);
+    expect(Math.abs(clips[0]!.endMs - 16000)).toBeLessThanOrEqual(600);
+    expect(notif?.body).toMatch(/1 clip/);
+  });
+
+  it("découpage : relance idempotente, clips retouchés conservés, option désactivable", async () => {
+    const u = await makeUser("Cy");
+    const id = await uploadFile(u.id, "analysis.mp4");
+    const first = await prisma.clip.findFirstOrThrow({ where: { recordingId: id } });
+    await prisma.clip.update({ where: { id: first.id }, data: { favorite: true } });
+    await requestAnalysis(id, 6);
+    await drain();
+    expect(await prisma.clip.count({ where: { recordingId: id } })).toBe(1); // le favori reste, pas de doublon
+    await prisma.clip.update({ where: { id: first.id }, data: { favorite: false } });
+    await requestAnalysis(id, 10, { deaths: false, fights: false });
+    await drain();
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    expect((job.result as { steps: { name: string; status: string }[] }).steps.at(-1)).toMatchObject({ status: "skipped" });
+    await prisma.playerProfile.update({ where: { userId: u.id }, data: { autoClipDeaths: true } });
+    await requestAnalysis(id, 10);
+    await drain();
+    expect(await prisma.clip.count({ where: { recordingId: id, kind: "DEATH" } })).toBe(1);
   });
 
   it("avec la minimap définie : hausse de marqueurs rouges mesurée avant la mort, alternative conditionnelle, annotation minimap", async () => {

@@ -1,10 +1,25 @@
 // Configuration centralisée (côté serveur uniquement).
+import { existsSync } from "node:fs";
 function int(name: string, def: number): number {
   const raw = process.env[name];
   if (!raw) return def;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) throw new Error(`Variable ${name} invalide : ${raw}`);
   return n;
+}
+
+/**
+ * Interpréteur Python de l'analyse. Un venv se trouve dans « bin/python » sous Linux/macOS
+ * et dans « Scripts\\python.exe » sous Windows : un chemin d'un système est converti pour l'autre.
+ */
+function resolvePython(configured: string | null): string {
+  const win = process.platform === "win32";
+  const def = win ? ".venv-analysis\\Scripts\\python.exe" : ".venv-analysis/bin/python";
+  if (!configured) return def;
+  if (existsSync(configured)) return configured;
+  if (win && /[\\/]bin[\\/]python3?$/.test(configured)) return configured.replace(/[\\/]bin[\\/]python3?$/, "\\Scripts\\python.exe");
+  if (!win && /[\\/]Scripts[\\/]python(\.exe)?$/i.test(configured)) return configured.replace(/[\\/]Scripts[\\/]python(\.exe)?$/i, "/bin/python");
+  return configured;
 }
 
 export const env = {
@@ -34,7 +49,7 @@ export const env = {
   },
   /** Interpréteur Python de l'analyse vidéo (venv recommandé : .venv-analysis). */
   get pythonBin() {
-    return process.env.ANALYSIS_PYTHON ?? (process.platform === "win32" ? ".venv-analysis\\Scripts\\python.exe" : ".venv-analysis/bin/python");
+    return resolvePython(process.env.ANALYSIS_PYTHON?.trim() || null);
   },
   get analysisTimeoutSec() {
     return int("ANALYSIS_TIMEOUT_SEC", 1800);

@@ -21,6 +21,7 @@ export const KIND_ICON: Record<RecommendationDTO["kind"], string> = {
   FIGHT: "⚔",
   MISSED_OPPORTUNITY: "○",
   INTERESTING: "★",
+  DEATH: "☠",
 };
 
 export function MomentCard({

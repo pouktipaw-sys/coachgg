@@ -14,6 +14,8 @@ const schema = z.object({
   explanationDensity: z.enum(["concise", "normal", "detailed"]).optional(),
   language: z.enum(["fr", "en"]).optional(),
   shareStatsWithTeams: z.boolean().optional(),
+  autoClipDeaths: z.boolean().optional(),
+  autoClipFights: z.boolean().optional(),
   retentionDays: z.number().int().min(7).max(3650).nullable().optional(),
   completeOnboarding: z.boolean().optional(),
 });

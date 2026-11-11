@@ -33,6 +33,8 @@ export default async function VideoPage({ params, searchParams }: { params: Prom
   const isOwner = data.access === "owner";
   const rec = data.recording;
   const st = RECORDING_STATUS[rec.status]!;
+  const prefs = isOwner ? await prisma.playerProfile.findUnique({ where: { userId: user.id }, select: { autoClipDeaths: true, autoClipFights: true } }) : null;
+  const clipDefaults = { deaths: prefs?.autoClipDeaths ?? true, fights: prefs?.autoClipFights ?? false };
   const analysisJob = isOwner
     ? await prisma.analysisJob.findFirst({
         where: { recordingId: id, type: "ANALYZE_RECORDING" },
@@ -76,7 +78,7 @@ export default async function VideoPage({ params, searchParams }: { params: Prom
       )}
       {isOwner && rec.status === "READY" && (
         <div className="mt-6">
-          <AnalysisPanel recordingId={rec.id} initial={toPlain<AnalysisJobDTO>(analysisJob)} />
+          <AnalysisPanel recordingId={rec.id} initial={toPlain<AnalysisJobDTO>(analysisJob)} clipDefaults={clipDefaults} />
         </div>
       )}
       {isOwner && rec.status === "READY" && (

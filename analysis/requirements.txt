@@ -1,3 +1,5 @@
 # Analyse vidéo assistée — dépendances (licences : Apache-2.0, BSD-3-Clause)
 opencv-python-headless==5.0.0.93
 numpy==2.5.4
+# Export des clips annotés (licence : MIT-CMU)
+pillow==13.0.0

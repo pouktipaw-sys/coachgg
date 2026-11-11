@@ -20,14 +20,19 @@ export function analyzerAvailable(): Promise<{ ok: boolean; reason?: string }> {
     const t = setTimeout(() => p.kill("SIGKILL"), 20_000);
     p.on("error", () => {
       clearTimeout(t);
-      resolve({ ok: false, reason: `Python introuvable (${env.pythonBin}).` });
+      resolve({ ok: false, reason: `Python introuvable (${env.pythonBin}). Installez-le avec « npm run setup:analysis », puis relancez l'analyse.` });
     });
     p.on("close", (code) => {
       clearTimeout(t);
-      resolve(code === 0 ? { ok: true } : { ok: false, reason: "OpenCV/NumPy non installés pour l'analyse." });
+      resolve(code === 0 ? { ok: true } : { ok: false, reason: "OpenCV/NumPy non installés pour l'analyse : lancez « npm run setup:analysis », puis relancez l'analyse." });
     });
   });
-  return availability;
+  // Un échec n'est pas mémorisé : après « npm run setup:analysis », la relance fonctionne sans redémarrage.
+  const current = availability;
+  current.then((r) => {
+    if (!r.ok && availability === current) availability = null;
+  });
+  return current;
 }
 
 /** Tests : force une nouvelle vérification de disponibilité. */

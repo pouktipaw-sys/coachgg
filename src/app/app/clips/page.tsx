@@ -24,6 +24,7 @@ export default async function ClipsPage({ searchParams }: { searchParams: Promis
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="favorite" value="1" defaultChecked={sp.favorite === "1"} /> Favoris
         </label>
+        {sp.recordingId && <input type="hidden" name="recordingId" value={sp.recordingId} />}
         <button className="btn-ghost">Filtrer</button>
       </form>
       {clips.length === 0 ? (

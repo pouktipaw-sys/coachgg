@@ -28,17 +28,22 @@ export async function enqueueJob(input: {
   });
 }
 
-/** Réserve atomiquement la prochaine tâche exécutable (ou une tâche abandonnée). */
+/**
+ * Réserve atomiquement la prochaine tâche exécutable (ou une tâche abandonnée).
+ * Les colonnes sont des « timestamp » sans fuseau écrits en UTC par Prisma : l'heure SQL
+ * est donc prise en UTC explicitement (PostgreSQL sous Windows est souvent réglé sur
+ * l'heure locale, ce qui décalait les durées d'une heure).
+ */
 export async function claimNextJob(workerId: string): Promise<AnalysisJob | null> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     UPDATE "AnalysisJob" SET
-      status = 'RUNNING', "lockedAt" = now(), "lockedBy" = ${workerId},
-      attempts = attempts + 1, "startedAt" = now(), "updatedAt" = now(), error = NULL
+      status = 'RUNNING', "lockedAt" = (now() AT TIME ZONE 'UTC'), "lockedBy" = ${workerId},
+      attempts = attempts + 1, "startedAt" = (now() AT TIME ZONE 'UTC'), "updatedAt" = (now() AT TIME ZONE 'UTC'), error = NULL
     WHERE id = (
       SELECT id FROM "AnalysisJob"
       WHERE "cancelRequested" = false AND (
-        (status = 'PENDING' AND "runAfter" <= now())
-        OR (status = 'RUNNING' AND "lockedAt" < now() - (${STALE_LOCK_MS} * interval '1 millisecond'))
+        (status = 'PENDING' AND "runAfter" <= (now() AT TIME ZONE 'UTC'))
+        OR (status = 'RUNNING' AND "lockedAt" < (now() AT TIME ZONE 'UTC') - (${STALE_LOCK_MS} * interval '1 millisecond'))
       )
       ORDER BY "runAfter" ASC, "createdAt" ASC
       FOR UPDATE SKIP LOCKED
