@@ -15,6 +15,7 @@ Toutes les variables sont lues côté serveur. Copiez `.env.example` en `.env`. 
 | `FFMPEG_THREADS` | 2 | Threads de transcodage. |
 | `FFMPEG_TIMEOUT_SEC` | 3600 | Durée max d'un traitement. |
 | `RIOT_API_KEY` | vide | Active l'import Riot. |
+| `RIOT_HISTORY_MAX` | 200 | Nombre maximal de parties importées lors de la synchronisation de l'historique. |
 | `SMTP_URL` | vide | Envoi réel des emails (`smtp://` ou `smtps://user:pass@hôte:port`). Vide : logs serveur en dev, aucun envoi en prod. |
 | `MAIL_FROM` | `CoachGG <no-reply@localhost>` | Expéditeur des emails. |
 

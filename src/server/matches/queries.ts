@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db";
 import { CURRENT_SCORE_CONFIG } from "@/lib/scoring/config";
+import { matchIdsWithTeammate } from "../teammates";
 
 /** Matchs auxquels l'utilisateur a participé ou qu'il a créés (pour les sélecteurs). */
 export async function userMatchOptions(userId: string) {
@@ -28,6 +29,7 @@ export const matchFiltersSchema = z.object({
   mode: z.string().max(20).optional(),
   with: z.enum(["solo", "friends"]).optional(),
   team: z.string().optional(),
+  mate: z.string().optional(), // coéquipier suivi : parties jouées ensemble (même équipe)
 });
 export type MatchFilters = z.infer<typeof matchFiltersSchema>;
 
@@ -53,7 +55,9 @@ export async function listUserMatches(userId: string, f: MatchFilters, take = 10
     })
   ).map((m) => m.userId);
 
+  const mateMatchIds = f.mate ? await matchIdsWithTeammate(userId, f.mate) : null;
   const where: Prisma.MatchWhereInput = {
+    ...(mateMatchIds ? { id: { in: mateMatchIds } } : {}),
     participants: { some: mine },
     ...(f.mode ? { gameMode: f.mode } : {}),
     ...(since ? { OR: [{ gameStartAt: { gte: since } }, { gameStartAt: null, createdAt: { gte: since } }] } : {}),

@@ -28,6 +28,12 @@ async function register(page: Page, name: string) {
   return email;
 }
 
+/** Page d'import : le formulaire doit être hydraté avant de choisir le fichier (serveur de dev à froid). */
+async function gotoUpload(page: Page) {
+  await page.goto("/app/videos/upload");
+  await page.waitForLoadState("networkidle");
+}
+
 async function videoTime(page: Page) {
   return page.locator("[data-testid=video]").evaluate((v: HTMLVideoElement) => v.currentTime);
 }
@@ -44,7 +50,7 @@ test("import vidéo réel, moment de coaching annoté et lecture synchronisée",
   await register(page, "Alice");
 
   // Import
-  await page.goto("/app/videos/upload");
+  await gotoUpload(page);
   await page.setInputFiles("[data-testid=file-input]", SAMPLE);
   await page.click("button:has-text('Envoyer la vidéo')");
   await expect(page.getByText("Vidéo prête")).toBeVisible({ timeout: 60_000 });
@@ -139,7 +145,7 @@ test("import vidéo réel, moment de coaching annoté et lecture synchronisée",
 
 test("fichier invalide refusé avec un message clair", async ({ page }) => {
   await register(page, "Bob");
-  await page.goto("/app/videos/upload");
+  await gotoUpload(page);
   await page.setInputFiles("[data-testid=file-input]", { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
   await expect(page.locator("p[role=alert]")).toContainText("Format non pris en charge");
   await page.setInputFiles("[data-testid=file-input]", { name: "faux.mp4", mimeType: "video/mp4", buffer: Buffer.from("<html>".padEnd(5000, "x")) });
@@ -201,6 +207,21 @@ test("groupe d'amis : invitation, match commun et MVP", async ({ page, browser }
   await bob.click("text=Duo du soir");
   await expect(bob.locator("[data-testid=mvp-explanation]")).toContainText("Alice");
   await bobCtx.close();
+
+  // Alice note Bob et l'élit MVP ; une catégorie
+  const voteRow = page.locator("[data-testid=vote-row]").filter({ hasText: "Bob" });
+  await voteRow.getByLabel("Note de Bob").selectOption("9");
+  await voteRow.getByLabel("MVP : Bob").check();
+  await voteRow.getByRole("button", { name: /Carry/ }).click();
+  await page.click("[data-testid=vote-save]");
+  await expect(page.locator("[data-testid=elected-mvp]")).toContainText("Bob");
+
+  // Coéquipier suivi par Riot ID : partie commune retrouvée
+  await page.goto("/app/teammates");
+  await page.fill("#tm-id", "BobGG#EUW");
+  await page.click("[data-testid=add-teammate]");
+  await expect(page.locator("[data-testid=teammate-card]")).toContainText("1 partie(s) ensemble");
+  await expect(page.locator("[data-testid=teammate-card]")).toContainText("9/10");
 });
 
 test("analyse assistée : proposition automatique en brouillon, revue et validation", async ({ page }) => {
@@ -211,7 +232,7 @@ test("analyse assistée : proposition automatique en brouillon, revue et validat
       { cwd: FIX },
     );
   await register(page, "Chloe");
-  await page.goto("/app/videos/upload");
+  await gotoUpload(page);
   await page.setInputFiles("[data-testid=file-input]", ANALYSIS);
   await page.click("button:has-text('Envoyer la vidéo')");
   await expect(page.getByText("Vidéo prête")).toBeVisible({ timeout: 60_000 });
@@ -311,8 +332,7 @@ test("visionnage synchronisé : deux vidéos du même match sur une horloge de j
   await register(page, "Sync");
   const ids: string[] = [];
   for (let i = 0; i < 2; i++) {
-    await page.goto("/app/videos/upload");
-    await page.waitForLoadState("networkidle"); // le formulaire doit être hydraté avant de choisir le fichier
+    await gotoUpload(page);
     await page.setInputFiles("[data-testid=file-input]", SAMPLE);
     await page.click("button:has-text('Envoyer la vidéo')");
     await expect(page.getByText("Vidéo prête")).toBeVisible({ timeout: 60_000 });

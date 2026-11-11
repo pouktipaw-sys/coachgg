@@ -18,6 +18,7 @@ export function AppNav({ user, unread, invites, isAdmin }: { user: { displayName
     { href: "/app/progress", label: "Progression", icon: "↗" },
     { href: "/app/goals", label: "Objectifs", icon: "◇" },
     { href: "/app/coach", label: "Coach", icon: "✦" },
+    { href: "/app/teammates", label: "Coéquipiers", icon: "☺" },
     { href: "/app/teams", label: "Groupes", icon: "◎" },
     { href: "/app/invitations", label: "Invitations", icon: "✉", badge: invites },
     { href: "/app/notifications", label: "Notifications", icon: "◔", badge: unread },

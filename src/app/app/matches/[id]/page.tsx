@@ -13,6 +13,8 @@ import { statAdvice, type Level } from "@/lib/scoring/advice";
 import { COMPONENT_LABELS, CURRENT_SCORE_CONFIG } from "@/lib/scoring/config";
 import type { ComponentResult, Factor, ScoreResult } from "@/lib/scoring/engine";
 import { formatMs } from "@/lib/annotations/coaching";
+import { voteBoard } from "@/server/peerVotes";
+import { PeerVotePanel, type VoteBoard } from "@/components/votes/PeerVotePanel";
 
 export const metadata = { title: "Rapport de match" };
 
@@ -38,6 +40,12 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
     }),
     prisma.teamMembership.findMany({ where: { userId: user.id }, select: { teamId: true } }),
   ]);
+  const [board, tracked] = await Promise.all([
+    voteBoard(user.id, id),
+    prisma.teammate.findMany({ where: { ownerId: user.id }, select: { gameName: true, tagLine: true } }),
+  ]);
+  const isTracked = (n: string | null, t: string | null) =>
+    !!n && tracked.some((x) => x.gameName.toLowerCase() === n.toLowerCase() && x.tagLine.toLowerCase() === (t ?? "").toLowerCase());
   const myTeamIds = new Set(myTeams.map((t) => t.teamId));
   const teamReports = match.teamReports.filter((r) => myTeamIds.has(r.teamId));
   const components = (score?.components ?? []) as unknown as ComponentResult[];
@@ -199,6 +207,8 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
         </div>
       )}
 
+      {(board.me || board.results.some((r) => r.tally.voters > 0)) && <PeerVotePanel matchId={id} initial={JSON.parse(JSON.stringify(board)) as VoteBoard} />}
+
       {myTimeline && (
         <section className="card space-y-4" data-testid="match-timeline">
           <h2 className="h2">Évolution dans la partie</h2>
@@ -250,7 +260,15 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
                   const sc = p.scores.find((x) => x.scoreVersionId === CURRENT_SCORE_CONFIG.version);
                   return (
                     <tr key={p.id} className={p.userId === user.id ? "bg-accent/5" : ""}>
-                      <td className="py-1.5">{p.riotGameName ? `${p.riotGameName}#${p.riotTagLine ?? ""}` : "—"}{p.user && <span className="text-xs text-accent-2"> · {p.user.displayName}</span>}</td>
+                      <td className="py-1.5">
+                        {p.riotGameName ? `${p.riotGameName}#${p.riotTagLine ?? ""}` : "—"}
+                        {p.user && <span className="text-xs text-accent-2"> · {p.user.displayName}</span>}
+                        {p.userId !== user.id && p.riotGameName && p.riotTagLine && !isTracked(p.riotGameName, p.riotTagLine) && (
+                          <span className="ml-1 align-middle">
+                            <ActionButton url="/api/teammates" body={{ riotId: `${p.riotGameName}#${p.riotTagLine}`, platform: match.platform ?? "EUW1" }} label="+ Suivre" done="Ajouté à vos coéquipiers." className="text-xs text-accent-2 underline" />
+                          </span>
+                        )}
+                      </td>
                       <td>{p.championName}</td>
                       <td>{p.role ? ROLE_LABELS[p.role] : "—"}</td>
                       <td className="font-mono">{s ? `${s.kills}/${s.deaths}/${s.assists}` : "—"}</td>

@@ -25,6 +25,8 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
     listUserMatches(user.id, f, PER_PAGE + 1, (page - 1) * PER_PAGE),
     prisma.team.findMany({ where: { memberships: { some: { userId: user.id } } }, select: { id: true, name: true } }),
   ]);
+  const mate = f.mate ? await prisma.teammate.findFirst({ where: { id: f.mate, ownerId: user.id } }) : null;
+  const mateLabel = mate ? mate.nickname ?? `${mate.gameName}#${mate.tagLine}` : null;
   const rows = fetched.slice(0, PER_PAGE);
   const hasMore = fetched.length > PER_PAGE;
   const filtered = Object.entries(sp).some(([k, v]) => k !== "page" && !!v);
@@ -65,8 +67,14 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
           <option value="">Tous groupes</option>
           {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
+        {f.mate && <input type="hidden" name="mate" value={f.mate} />}
         <button className="btn-ghost">Filtrer</button>
       </form>
+      {f.mate && (
+        <p className="mb-3 text-sm">
+          Parties avec <strong>{mateLabel ?? "ce coéquipier"}</strong> dans votre équipe. <Link className="underline" href="/app/matches">Tout l&apos;historique</Link>
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <EmptyState
