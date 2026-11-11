@@ -20,6 +20,7 @@
     "admin:promote": "tsx scripts/promote-admin.ts",
     "test:analysis": "node scripts/run-analysis-tests.mjs",
     "setup:analysis": "node scripts/setup-analysis.mjs",
+    "ai:check": "tsx scripts/ai-check.ts",
     "benchmark:analysis": "tsx scripts/benchmark-analysis.ts",
     "agent": "tsx desktop/src/cli.ts",
     "demo:video": "node scripts/demo-video.cjs",

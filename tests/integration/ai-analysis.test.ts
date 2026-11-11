@@ -63,6 +63,7 @@ function fakeClaude(calls: Req[]) {
 afterEach(() => {
   aiDeps.client = original;
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANALYSIS_AI_BUDGET_USD;
 });
 
 describe.skipIf(!available)("analyse IA (faux client Claude)", () => {
@@ -119,4 +120,29 @@ describe.skipIf(!available)("analyse IA (faux client Claude)", () => {
     expect(seen.recording.gameReport).toBeNull();
     expect(seen.recording.recapKey).toBeNull();
   });
+  it("plafond de budget : aucune requête IA si le budget du mois ne couvre pas un moment ; coûts cumulés entre relances", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    process.env.ANALYSIS_AI_BUDGET_USD = "0.05"; // moins que la réserve d'un moment (0,08 $)
+    const calls: Req[] = [];
+    aiDeps.client = () => fakeClaude(calls);
+    const u = await makeUser("Dan");
+    const id = await uploadFile(u.id, "analysis.mp4");
+    expect(calls).toHaveLength(0);
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Analyse IA des moments (Claude)")!;
+    expect(step.note).toMatch(/budget IA du mois atteint/);
+    expect((await prisma.recording.findUniqueOrThrow({ where: { id } })).gameReport).toMatchObject({ source: "rules" });
+
+    // Budget suffisant : l'IA tourne, et une relance ajoute son coût au lieu de l'écraser.
+    process.env.ANALYSIS_AI_BUDGET_USD = "5";
+    const { requestAnalysis } = await import("@/server/analysis/job");
+    const { drain } = await import("@/worker/index");
+    await requestAnalysis(id, 10);
+    await drain();
+    const first = (await prisma.analysisJob.findUniqueOrThrow({ where: { id: job.id } })).costMicros;
+    expect(first).toBeGreaterThan(0);
+    await requestAnalysis(id, 6);
+    await drain();
+    expect((await prisma.analysisJob.findUniqueOrThrow({ where: { id: job.id } })).costMicros).toBe(first * 2);
+  }, 240_000);
 });

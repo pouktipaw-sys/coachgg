@@ -15,7 +15,26 @@ import { formatMs, gameTimeMs } from "@/lib/annotations/coaching";
 import type { Proposal } from "@/lib/analysis/rules";
 
 export const AI_VERSION = "ia-1.0.0";
-export const AI_MAX_MOMENTS = 8; // plafond de coût par vidéo
+/** Morts analysées au maximum par vidéo (plafond de coût) — ANALYSIS_AI_MAX_MOMENTS, 8 par défaut. */
+export const aiMaxMoments = () => Math.max(1, Math.min(20, Number(process.env.ANALYSIS_AI_MAX_MOMENTS) || 8));
+const aiEffort = () => (["low", "medium", "high"].includes(process.env.ANALYSIS_AI_EFFORT ?? "") ? process.env.ANALYSIS_AI_EFFORT : "medium") as "low" | "medium" | "high";
+/** Budget IA mensuel en dollars (ANALYSIS_AI_BUDGET_USD) ; null = pas de plafond applicatif. */
+export const aiBudgetMicros = () => {
+  const v = Number(process.env.ANALYSIS_AI_BUDGET_USD);
+  return Number.isFinite(v) && v > 0 ? Math.round(v * 1e6) : null;
+};
+/** Dépense IA estimée depuis le début du mois (analyses vidéo + coach), en micro-dollars. */
+export async function aiSpentThisMonthMicros(now = new Date()) {
+  const { prisma } = await import("../db");
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const [jobs, coach] = await Promise.all([
+    prisma.analysisJob.aggregate({ where: { createdAt: { gte: since }, costMicros: { gt: 0 } }, _sum: { costMicros: true } }),
+    prisma.coachMessage.aggregate({ where: { createdAt: { gte: since } }, _sum: { costMicros: true } }),
+  ]);
+  return (jobs._sum.costMicros ?? 0) + (coach._sum.costMicros ?? 0);
+}
+/** Coût maximal estimé d'un moment, pour ne jamais dépasser le budget (prudent). */
+export const AI_MOMENT_RESERVE_MICROS = 80_000;
 const FRAMES = 6;
 
 export const aiModel = () => process.env.ANALYSIS_MODEL?.trim() || "claude-opus-5-5";
@@ -96,19 +115,7 @@ export async function reviewMoment(
     await grabFrame(process.env.FFMPEG_BIN || "ffmpeg", args.video, t, f);
     images.push(await readFile(f));
   }
-  const at = (ms: number) => {
-    const g = gameTimeMs(ms, args.gameStartOffsetMs);
-    return g != null && g >= 0 ? `${formatMs(ms)} (jeu ${formatMs(g)})` : formatMs(ms);
-  };
-  const content: Anthropic.Beta.BetaContentBlockParam[] = [];
-  images.forEach((img, i) => {
-    content.push({ type: "text", text: `Image ${i + 1} — ${at(times[i]!)}` });
-    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img.toString("base64") } });
-  });
-  content.push({
-    type: "text",
-    text: `Écran grisé (mort probable) détecté à ${at(args.deathMs)}.\nMesures automatiques : ${args.ruleObservations.join(" ")}\nAnalyse ce qui a mené à la mort et propose le schéma et le conseil.`,
-  });
+  const content = momentContent(images, times, args);
 
   let response;
   try {
@@ -118,7 +125,7 @@ export async function reviewMoment(
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      output_config: { effort: "medium", format: betaZodOutputFormat(MomentReviewSchema) },
+      output_config: { effort: aiEffort(), format: betaZodOutputFormat(MomentReviewSchema) },
       messages: [{ role: "user", content }],
     });
   } catch (e) {
@@ -132,6 +139,26 @@ export async function reviewMoment(
   if (response.stop_reason === "max_tokens" || !response.parsed_output) throw Object.assign(new AiAnalysisError("invalid_output", "Réponse de l'IA incomplète."), { costMicros });
   return { review: response.parsed_output, times, model: response.model, costMicros };
 }
+
+/** Contenu envoyé à Claude pour un moment (images horodatées + mesures) — partagé avec le test gratuit. */
+export function momentContent(images: Buffer[], times: number[], args: { deathMs: number; gameStartOffsetMs: number | null; ruleObservations: string[] }) {
+  const at = (ms: number) => {
+    const g = gameTimeMs(ms, args.gameStartOffsetMs);
+    return g != null && g >= 0 ? `${formatMs(ms)} (jeu ${formatMs(g)})` : formatMs(ms);
+  };
+  const content: Anthropic.Beta.BetaContentBlockParam[] = [];
+  images.forEach((img, i) => {
+    content.push({ type: "text", text: `Image ${i + 1} — ${at(times[i]!)}` });
+    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img.toString("base64") } });
+  });
+  content.push({
+    type: "text",
+    text: `Écran grisé (mort probable) détecté à ${at(args.deathMs)}.\nMesures automatiques : ${args.ruleObservations.join(" ")}\nAnalyse ce qui a mené à la mort et propose le schéma et le conseil.`,
+  });
+  return content;
+}
+export const MOMENT_SYSTEM = () => SYSTEM;
+export { grabFrame };
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 const cp = (p: { x: number; y: number }) => ({ x: clamp(p.x), y: clamp(p.y) });
@@ -202,7 +229,7 @@ export async function gameReportAi(moments: MomentLite[], stats: string | null, 
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     system: REPORT_SYSTEM,
-    output_config: { effort: "medium", format: betaZodOutputFormat(GameReportSchema) },
+    output_config: { effort: aiEffort(), format: betaZodOutputFormat(GameReportSchema) },
     messages: [{ role: "user", content: text }],
   });
   const costMicros = computeCost(response.model, response.usage) ?? 0;

@@ -17,6 +17,9 @@ Toutes les variables sont lues côté serveur. Copiez `.env.example` en `.env`. 
 | `RIOT_API_KEY` | vide | Active l'import Riot. |
 | `ANALYSIS_AI` | (actif si clé) | `off` pour ne jamais envoyer d'images à Claude, même avec `ANTHROPIC_API_KEY`. |
 | `ANALYSIS_MODEL` | `claude-opus-5-5` | Modèle utilisé pour l'analyse IA des moments et le bilan. |
+| `ANALYSIS_AI_BUDGET_USD` | vide (pas de plafond) | Plafond mensuel de dépense IA (analyses + coach). Atteint : analyse par règles. Coûts relances comprises. |
+| `ANALYSIS_AI_MAX_MOMENTS` | 8 | Morts analysées par l'IA au maximum par vidéo. |
+| `ANALYSIS_AI_EFFORT` | `medium` | Effort de réflexion de Claude (`low` moins cher, `high` plus fouillé). |
 | `RIOT_HISTORY_MAX` | 200 | Nombre maximal de parties importées lors de la synchronisation de l'historique. |
 | `SMTP_URL` | vide | Envoi réel des emails (`smtp://` ou `smtps://user:pass@hôte:port`). Vide : logs serveur en dev, aucun envoi en prod. |
 | `MAIL_FROM` | `CoachGG <no-reply@localhost>` | Expéditeur des emails. |

@@ -13,7 +13,7 @@ import { notify } from "../notifications";
 import { AnalyzerError, AnalyzerUnavailableError, analyzerAvailable, runAnalyzer } from "./runner";
 import { buildProposals, RULES_VERSION } from "@/lib/analysis/rules";
 import { autoClipsFrom } from "@/lib/analysis/autoClips";
-import { AI_MAX_MOMENTS, AI_VERSION, AiAnalysisError, aiDeps, aiEnabled, aiModel, gameReportAi, gameReportRules, proposalFromReview, reviewMoment, type GameReport } from "./ai";
+import { AI_MOMENT_RESERVE_MICROS, AI_VERSION, AiAnalysisError, aiBudgetMicros, aiMaxMoments, aiSpentThisMonthMicros, aiDeps, aiEnabled, aiModel, gameReportAi, gameReportRules, proposalFromReview, reviewMoment, type GameReport } from "./ai";
 import { requestRecap } from "../recap";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
@@ -128,13 +128,22 @@ export async function analyzeRecording(job: AnalysisJob) {
     });
 
     // 8 bis. Analyse par IA (Claude) des morts probables : observations, alternative, conseil et schéma.
+    // Coût cumulé : une relance réutilise la même tâche, la dépense précédente est conservée.
+    const baseCost = job.costMicros ?? 0;
     let costMicros = 0;
     if (aiEnabled()) {
       await step("Analyse IA des moments (Claude)", async () => {
-        const deaths = proposals.map((p, i) => ({ p, i })).filter(({ p }) => (p.evidence as { type?: string }).type === "grey_screen").slice(0, AI_MAX_MOMENTS);
+        const deaths = proposals.map((p, i) => ({ p, i })).filter(({ p }) => (p.evidence as { type?: string }).type === "grey_screen").slice(0, aiMaxMoments());
         let ok = 0;
         const errors: string[] = [];
+        const budget = aiBudgetMicros();
+        const spentBefore = budget ? await aiSpentThisMonthMicros() : 0;
         for (const { p, i } of deaths) {
+          // Plafond : on n'entame jamais un moment qui pourrait faire dépasser le budget du mois.
+          if (budget && spentBefore + costMicros + AI_MOMENT_RESERVE_MICROS > budget) {
+            errors.push(`budget IA du mois atteint (${(budget / 1e6).toFixed(2)} $) : analyse par règles pour la suite`);
+            break;
+          }
           try {
             const r = await reviewMoment(
               {
@@ -160,7 +169,7 @@ export async function analyzeRecording(job: AnalysisJob) {
             errors.push(e instanceof AiAnalysisError ? e.message : "erreur inattendue");
             if (e instanceof AiAnalysisError && e.kind === "auth") break;
           }
-          await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros } }).catch(() => {});
+          await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros: baseCost + costMicros } }).catch(() => {});
         }
         const note = `${ok}/${deaths.length} moment(s) analysé(s) par ${aiModel()} · coût estimé ${(costMicros / 1e6).toFixed(3)} $${errors.length ? ` · non analysés : ${[...new Set(errors)].join(" ; ")}` : ""}`;
         return { value: ok, status: errors.length && !ok && deaths.length ? "warning" : "ok", note };
@@ -279,7 +288,9 @@ export async function analyzeRecording(job: AnalysisJob) {
       let body = gameReportRules(lite);
       let source: GameReport["source"] = "rules";
       let model: string | undefined;
-      if (aiEnabled() && lite.length) {
+      const budget = aiBudgetMicros();
+      const withinBudget = !budget || (await aiSpentThisMonthMicros()) + AI_MOMENT_RESERVE_MICROS <= budget;
+      if (aiEnabled() && lite.length && withinBudget) {
         try {
           const stats = rec.matchId
             ? await prisma.matchParticipant
@@ -297,7 +308,7 @@ export async function analyzeRecording(job: AnalysisJob) {
       }
       const full: GameReport = { ...body, source, model, moments: lite.length, deaths, generatedAt: new Date().toISOString() };
       await prisma.recording.update({ where: { id: rec.id }, data: { gameReport: full as unknown as Prisma.InputJsonValue } });
-      if (costMicros) await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros } });
+      if (costMicros) await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros: baseCost + costMicros } });
       return { value: full, note: source === "ai" ? `Rédigé par ${model}.` : "Construit à partir des moments détectés (sans IA)." };
     });
 
