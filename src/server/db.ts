@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { loadEnv } from "@/lib/loadEnv";
 
 // Prisma 7 : connexion via l'adaptateur pg (plus de moteur Rust ni de lecture
 // automatique de .env). Next.js charge .env lui-même ; le worker et les scripts
 // (tsx) le chargent ici, sans écraser les variables déjà définies.
-if (!process.env.DATABASE_URL && existsSync(".env")) process.loadEnvFile(".env");
+if (!process.env.DATABASE_URL && existsSync(".env")) loadEnv(".env");
 
 function createClient() {
   const connectionString = process.env.DATABASE_URL;

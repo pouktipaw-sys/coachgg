@@ -2,7 +2,8 @@
 // Utilise uniquement le comptage de tokens d'Anthropic (gratuit) : aucune analyse n'est facturée.
 //   npm run ai:check                 → image de test générée
 //   npm run ai:check -- partie.mp4   → 6 images extraites de ta vidéo (comme l'analyse réelle)
-import { existsSync } from "node:fs";
+import "./load-env"; // en premier : .env chargé avant les autres modules
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
@@ -13,12 +14,35 @@ import { MOMENT_SYSTEM, aiBudgetMicros, aiMaxMoments, aiModel, aiSpentThisMonthM
 const PRICE = { in: 4, out: 20 }; // claude-opus-5-5, $ par million de tokens
 const usd = (micros: number) => `${(micros / 1e6).toFixed(3)} $`;
 
-async function main() {
-  if (existsSync(".env")) process.loadEnvFile(".env"); // n'écrase pas les variables déjà définies
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
-    console.log("❌ ANTHROPIC_API_KEY absente du fichier .env : ajoute-la puis relance.");
-    process.exit(1);
+/** Diagnostic du fichier .env (sans jamais afficher la clé) et lecture tolérante de ANTHROPIC_API_KEY. */
+function loadKey(): string | null {
+  const here = process.cwd();
+  console.log(`Dossier : ${here}`);
+  if (!existsSync(".env")) {
+    console.log(existsSync(".env.txt") ? "❌ Le fichier s'appelle « .env.txt » : renomme-le en « .env » (sans .txt)." : "❌ Aucun fichier .env dans ce dossier (lance la commande depuis le dossier coachgg).");
+    return process.env.ANTHROPIC_API_KEY?.trim() || null;
   }
+  let raw = readFileSync(".env", "utf8");
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1); // BOM ajouté par certains éditeurs Windows
+  const lines = raw.split(/\r?\n/).filter((l) => /^\s*(export\s+)?ANTHROPIC_API_KEY\s*=/.test(l));
+  if (!lines.length) {
+    console.log("❌ Le fichier .env ne contient pas de ligne ANTHROPIC_API_KEY=...");
+    return process.env.ANTHROPIC_API_KEY?.trim() || null;
+  }
+  if (lines.length > 1) console.log(`⚠️  ${lines.length} lignes ANTHROPIC_API_KEY dans .env : garde-n'en qu'une (la dernière est utilisée).`);
+  const value = lines.at(-1)!.replace(/^[^=]*=/, "").trim().replace(/^["']|["']$/g, "").trim();
+  if (!value) {
+    console.log("❌ La ligne ANTHROPIC_API_KEY est vide : colle ta clé entre les guillemets.");
+    return null;
+  }
+  console.log(`Clé trouvée dans .env : ${value.slice(0, 10)}… (${value.length} caractères)`);
+  if (/\s/.test(value)) console.log("⚠️  La clé contient un espace ou un retour à la ligne : recolle-la d'un seul bloc.");
+  process.env.ANTHROPIC_API_KEY = value; // la valeur du fichier fait foi
+  return value;
+}
+
+async function main() {
+  if (!loadKey()) process.exit(1);
   const video = process.argv[2];
   const tmp = await mkdtemp(path.join(os.tmpdir(), "coachgg-aicheck-"));
   try {
