@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, PageHeader, formatDate } from "@/components/ui";
@@ -15,6 +16,9 @@ export const metadata = { title: "Administration" };
 export default async function AdminPage() {
   const user = await requirePageUser();
   if (user.role !== "ADMIN") notFound();
+  const communityReports = await prisma.communityReport.findMany({ where: { resolvedAt: null }, orderBy: { createdAt: "desc" }, take: 50, include: { reporter: { select: { displayName: true } } } });
+  const reportedPosts = await prisma.communityPost.findMany({ where: { id: { in: communityReports.filter((r) => r.targetType === "POST").map((r) => r.targetId) } }, select: { id: true, title: true } });
+  const reportedComments = await prisma.communityComment.findMany({ where: { id: { in: communityReports.filter((r) => r.targetType === "COMMENT").map((r) => r.targetId) } }, select: { id: true, body: true, postId: true } });
   const [users, recordings, byStatus, jobs, feedback] = await Promise.all([
     prisma.user.count(),
     prisma.recording.count(),
@@ -119,6 +123,30 @@ export default async function AdminPage() {
             ))}
           </tbody>
         </table>
+      </section>
+      <section className="card" data-testid="community-reports">
+        <h2 className="h2">Signalements de la communauté ({communityReports.length})</h2>
+        {communityReports.length === 0 ? <p className="mt-2 text-sm text-muted">Aucun signalement ouvert.</p> : (
+          <ul className="mt-2 space-y-2 text-sm">
+            {communityReports.map((r) => {
+              const post = reportedPosts.find((x) => x.id === r.targetId);
+              const comment = reportedComments.find((x) => x.id === r.targetId);
+              return (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-panel-2 p-2">
+                  <span>
+                    <Badge tone="warn">{r.targetType === "POST" ? "Publication" : "Commentaire"}</Badge>{" "}
+                    {post ? <Link className="underline" href={`/app/community/${post.id}`}>{post.title}</Link> : comment ? <Link className="underline" href={`/app/community/${comment.postId}`}>« {comment.body.slice(0, 80)} »</Link> : <span className="text-muted">contenu supprimé</span>}
+                    <span className="block text-xs text-muted">Signalé par {r.reporter.displayName} : « {r.reason} »</span>
+                  </span>
+                  <span className="flex gap-3">
+                    <ActionButton url={`/api/admin/community/${r.id}`} body={{ action: "hide" }} label="Masquer le contenu" className="text-xs text-loss underline" />
+                    <ActionButton url={`/api/admin/community/${r.id}`} body={{ action: "dismiss" }} label="Ignorer" className="text-xs underline" />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
       <section className="card">
         <h2 className="h2">Signalements de diagnostics</h2>

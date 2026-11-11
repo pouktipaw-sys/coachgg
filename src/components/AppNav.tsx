@@ -19,6 +19,7 @@ export function AppNav({ user, unread, invites, friendRequests = 0, isAdmin }: {
     { href: "/app/skills", label: "Rang suivant", icon: "▲" },
     { href: "/app/goals", label: "Objectifs", icon: "◇" },
     { href: "/app/coach", label: "Coach", icon: "✦" },
+    { href: "/app/community", label: "Communauté", icon: "◉" },
     { href: "/app/friends", label: "Amis", icon: "☺", badge: friendRequests },
     { href: "/app/teams", label: "Groupes", icon: "◎" },
     { href: "/app/invitations", label: "Invitations", icon: "✉", badge: invites },

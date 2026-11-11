@@ -55,6 +55,10 @@ model User {
   coachThreads    CoachThread[]
   teammates       Teammate[]
   peerVotes       PeerVote[]
+  communityPosts  CommunityPost[]
+  communityComments CommunityComment[]
+  communityLikes  CommunityLike[]
+  communityReports CommunityReport[]
   friendRequestsSent Friendship[] @relation("FriendRequester")
   friendRequestsRecv Friendship[] @relation("FriendAddressee")
 }
@@ -403,6 +407,7 @@ model Clip {
   updatedAt    DateTime   @default(now()) @updatedAt
 
   recommendations Recommendation[]
+  communityPosts  CommunityPost[]
 
   @@index([recordingId])
   @@index([ownerId, createdAt])
@@ -868,4 +873,70 @@ model Friendship {
 
   @@unique([requesterId, addresseeId])
   @@index([addresseeId, status])
+}
+
+// ─────────────────────────── Communauté ───────────────────────────
+
+enum CommunityPostKind {
+  CLIP // reel : un clip exporté (extrait annoté), jamais la vidéo complète
+  EXPLOIT // « regardez ce que j'ai fait »
+  QUESTION // demande de conseil
+  DISCUSSION
+}
+
+model CommunityPost {
+  id        String            @id @default(cuid())
+  authorId  String
+  author    User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  kind      CommunityPostKind
+  title     String
+  body      String            @default("")
+  clipId    String?
+  clip      Clip?             @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  hiddenAt  DateTime? // masqué par la modération
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  comments CommunityComment[]
+  likes    CommunityLike[]
+
+  @@index([kind, createdAt])
+  @@index([authorId])
+}
+
+model CommunityComment {
+  id        String        @id @default(cuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  hiddenAt  DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([postId, createdAt])
+}
+
+model CommunityLike {
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@id([postId, userId])
+}
+
+model CommunityReport {
+  id         String    @id @default(cuid())
+  reporterId String
+  reporter   User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType String // POST | COMMENT
+  targetId   String
+  reason     String
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([resolvedAt])
 }

@@ -387,3 +387,25 @@ test("visionnage synchronisé : deux vidéos du même match sur une horloge de j
   await page.locator("[data-testid=sync-seek]").fill("2000");
   await expect(page.getByText("Cette vidéo ne couvre pas cet instant de la partie")).toHaveCount(1);
 });
+
+test("communauté : question sur le forum, commentaire, j'aime ; pages progression et rang suivant", async ({ page }) => {
+  await register(page, "Lina");
+  await page.goto("/app/community?tab=forum");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "❓ Conseil demandé" }).click();
+  await page.getByLabel("Titre").fill("Comment jouer contre un Yasuo ?");
+  await page.getByLabel("Message").fill("Ahri mid, Argent II.");
+  await page.click("button:has-text('Publier')");
+  await page.waitForURL(/\/app\/community\/.+/);
+  await expect(page.locator("[data-testid=post]")).toContainText("Comment jouer contre un Yasuo ?");
+  await page.fill("[data-testid=comment-input]", "Joue autour de son mur de vent.");
+  await page.click("button:has-text('Envoyer')");
+  await expect(page.locator("[data-testid=comments]")).toContainText("Joue autour de son mur de vent.");
+  await page.locator("[data-testid=post] [data-testid=like]").click();
+  await expect(page.locator("[data-testid=post] [data-testid=like]")).toContainText("1");
+
+  await page.goto("/app/progress");
+  await expect(page.getByText("Pas encore de partie notée")).toBeVisible();
+  await page.goto("/app/skills");
+  await expect(page.getByRole("heading", { name: /Objectif : Argent/ })).toBeVisible();
+});

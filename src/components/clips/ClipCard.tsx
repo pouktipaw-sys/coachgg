@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "@/lib/client";
 import { KIND_LABELS, MOMENT_KINDS } from "@/lib/annotations/schema";
 import { formatMs } from "@/lib/annotations/coaching";
+import { PublishClipButton } from "@/components/community/CommunityBits";
 
 export type ClipDTO = {
   id: string;
@@ -84,6 +85,7 @@ export function ClipCard({ clip, me }: { clip: ClipDTO; me: string }) {
         onBlur={() => note !== (c.personalNote ?? "") && patch({ personalNote: note || null })}
       />
       <div className="flex flex-wrap items-center gap-2 text-xs">
+        {c.recording.ownerId === me && <PublishClipButton clipId={c.id} defaultTitle={c.title} />}
         {c.exportStatus === "READY" ? (
           <a className="btn-primary px-2.5 py-1 text-xs" href={`/api/clips/${c.id}/export`} data-testid="clip-download">Télécharger la vidéo annotée</a>
         ) : c.exportStatus === "PENDING" || c.exportStatus === "RUNNING" ? (

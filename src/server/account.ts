@@ -20,6 +20,13 @@ export async function exportUserData(userId: string) {
         include: { recommendations: { include: { observations: true } }, annotations: true, clips: true, shares: true },
       },
       participants: { include: { statistics: true, scores: true, match: true } },
+      teammates: true,
+      peerVotes: true,
+      friendRequestsSent: { select: { addresseeId: true, status: true, createdAt: true } },
+      friendRequestsRecv: { select: { requesterId: true, status: true, createdAt: true } },
+      communityPosts: true,
+      communityComments: true,
+      communityLikes: { select: { postId: true, createdAt: true } },
     },
   });
   return { exportedAt: new Date().toISOString(), format: "coachgg-export-v1", note: "Les fichiers vidéo ne sont pas inclus.", user };
