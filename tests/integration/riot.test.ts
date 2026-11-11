@@ -213,6 +213,33 @@ describe("intégration Riot (simulée)", () => {
   it("sans clé Riot configurée, aucune synchronisation automatique", async () => {
     const u = await makeUser("Ana");
     await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Ana", tagLine: "EUW", platform: "EUW1" } });
-    expect(await autoSyncIfDue(u.id)).toBeNull();
+    expect(await autoSyncIfDue(u.id)).toEqual([]);
+  });
+});
+
+describe("plusieurs comptes Riot", () => {
+  it("synchronise chaque compte séparément, toutes les parties rejoignent l'historique", async () => {
+    const u = await makeUser("Ana");
+    const main = await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "AnaMain", tagLine: "EUW", platform: "EUW1", puuid: "P-MAIN", isPrimary: true } });
+    const smurf = await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "AnaSmurf", tagLine: "EUW", platform: "EUW1", puuid: "P-SMURF", isPrimary: false } });
+    const client = new RiotClient("k", async (url: string) => {
+      if (url.includes("/by-puuid/P-MAIN/ids")) return new Response(JSON.stringify(new URL(url).searchParams.get("start") === "0" ? ["EUW1_10"] : []), { status: 200 });
+      if (url.includes("/by-puuid/P-SMURF/ids")) return new Response(JSON.stringify(new URL(url).searchParams.get("start") === "0" ? ["EUW1_20", "EUW1_21"] : []), { status: 200 });
+      const m = /matches\/(EUW1_(\d+))$/.exec(url);
+      if (m) return new Response(JSON.stringify(fakeMatch(m[1]!, [Number(m[2]) < 20 ? "P-MAIN" : "P-SMURF"])), { status: 200 });
+      if (url.includes("/league/")) return new Response("[]", { status: 200 });
+      return new Response("{}", { status: 404 });
+    });
+    const j1 = await requestRiotSync(u.id, "full", main.id);
+    const j2 = await requestRiotSync(u.id, "full", smurf.id);
+    expect(j1.id).not.toBe(j2.id); // une tâche par compte
+    await runRiotSync(j1, client);
+    await runRiotSync(j2, client);
+    expect(await prisma.matchParticipant.count({ where: { userId: u.id } })).toBe(3);
+    const { listUserMatches, parseMatchFilters } = await import("@/server/matches/queries");
+    expect(await listUserMatches(u.id, parseMatchFilters({}))).toHaveLength(3);
+    expect(await listUserMatches(u.id, parseMatchFilters({ account: smurf.id }))).toHaveLength(2);
+    const { syncStatuses } = await import("@/server/riot/import");
+    expect((await syncStatuses(u.id)).map((a) => [a.riotId, a.primary])).toEqual([["AnaMain#EUW", true], ["AnaSmurf#EUW", false]]);
   });
 });

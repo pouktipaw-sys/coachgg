@@ -21,9 +21,11 @@ export const POST = authed(async (req, user) => {
     where: { userId: user.id, gameName: { equals: input.gameName, mode: "insensitive" }, tagLine: { equals: input.tagLine, mode: "insensitive" } },
   });
   if (exists) throw new HttpError(409, "exists", "Cette identité est déjà associée.");
-  await prisma.gameIdentity.updateMany({ where: { userId: user.id }, data: { isPrimary: false } });
-  const identity = await prisma.gameIdentity.create({ data: { userId: user.id, ...input, verification: "DECLARED", isPrimary: true } });
+  // Plusieurs comptes Riot possibles : le premier devient le compte principal (modifiable ensuite).
+  const hasPrimary = (await prisma.gameIdentity.count({ where: { userId: user.id, isPrimary: true } })) > 0;
+  if ((await prisma.gameIdentity.count({ where: { userId: user.id } })) >= 10) throw new HttpError(429, "too_many", "Limite de 10 comptes Riot atteinte.");
+  const identity = await prisma.gameIdentity.create({ data: { userId: user.id, ...input, verification: "DECLARED", isPrimary: !hasPrimary } });
   // Clé Riot configurée : tout l'historique est importé en tâche de fond.
-  const historySync = env.riotApiKey ? await requestRiotSync(user.id, "full").then(() => true).catch(() => false) : false;
+  const historySync = env.riotApiKey ? await requestRiotSync(user.id, "full", identity.id).then(() => true).catch(() => false) : false;
   return json({ identity, historySync }, 201);
 });

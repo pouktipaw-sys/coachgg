@@ -20,7 +20,7 @@ export default async function SettingsPage() {
       <PageHeader title="Paramètres" subtitle={user.email} />
 
       <section className="card space-y-3" id="identite">
-        <h2 className="h2">Identité Riot</h2>
+        <h2 className="h2">Comptes Riot</h2>
         <p className="text-sm text-muted">
           CoachGG ne demande jamais votre mot de passe Riot. Le Riot ID est <strong>déclaré</strong> : il sert à retrouver vos
           parties publiques et à reconnaître vos amis dans un match. La vérification officielle (Riot Sign On) nécessite une
@@ -41,6 +41,7 @@ export default async function SettingsPage() {
                   </span>
                 </span>
                 <span className="flex items-center gap-3">
+                  {!i.isPrimary && <ActionButton url={`/api/identities/${i.id}`} method="PATCH" label="Définir comme principal" className="text-xs underline" />}
                   {riot && <ActionButton url={`/api/identities/${i.id}/rank`} label="Actualiser le rang" className="text-xs underline" />}
                   <ActionButton url={`/api/identities/${i.id}`} method="DELETE" label="Retirer" className="text-xs text-loss underline" />
                 </span>
@@ -49,6 +50,9 @@ export default async function SettingsPage() {
           </ul>
         )}
         <IdentityForm />
+        <p className="text-xs text-muted">
+          Vous pouvez associer plusieurs comptes (smurf, autre serveur…) : toutes leurs parties rejoignent votre historique, et le compte principal est celui affiché à vos amis.
+        </p>
       </section>
 
       <section className="card space-y-3">

@@ -103,10 +103,16 @@ const PAGE = 100;
 const TIMELINE_RECENT = 20; // timeline uniquement pour les parties les plus récentes (quota Riot)
 export const INCREMENTAL_EVERY_MS = 15 * 60_000;
 
-/** Met en file la synchronisation de l'historique (une seule tâche par utilisateur). */
-export async function requestRiotSync(userId: string, mode: SyncMode = "full") {
-  const payload = { userId, mode };
-  const job = await enqueueJob({ type: "RIOT_SYNC", idempotencyKey: `riot-sync:${userId}`, payload, maxAttempts: 3 });
+export const syncKey = (identityId: string) => `riot-sync:${identityId}`;
+
+/** Met en file la synchronisation de l'historique d'un compte Riot (une tâche par compte). */
+export async function requestRiotSync(userId: string, mode: SyncMode = "full", identityId?: string) {
+  const identity = identityId
+    ? await prisma.gameIdentity.findFirst({ where: { id: identityId, userId } })
+    : await prisma.gameIdentity.findFirst({ where: { userId, provider: "riot", isPrimary: true } });
+  if (!identity) throw badRequest("Ajoutez d'abord votre Riot ID dans les paramètres.");
+  const payload = { userId, mode, identityId: identity.id };
+  const job = await enqueueJob({ type: "RIOT_SYNC", idempotencyKey: syncKey(identity.id), payload, maxAttempts: 3 });
   if (job.status === "RUNNING" || job.status === "PENDING") return job;
   await prisma.analysisJob.update({ where: { id: job.id }, data: { payload } });
   return retryJob(job.id);
@@ -117,15 +123,34 @@ export async function requestRiotSync(userId: string, mode: SyncMode = "full") {
  * puis mise à jour incrémentale au plus toutes les 15 minutes. Sans clé Riot : rien.
  */
 export async function autoSyncIfDue(userId: string) {
-  if (!env.riotApiKey) return null;
-  const identity = await prisma.gameIdentity.findFirst({ where: { userId, provider: "riot", isPrimary: true } });
-  if (!identity) return null;
-  if (identity.historySyncedAt && Date.now() - identity.historySyncedAt.getTime() < INCREMENTAL_EVERY_MS) return null;
-  const job = await prisma.analysisJob.findUnique({ where: { idempotencyKey: `riot-sync:${userId}` } });
-  if (job && (job.status === "PENDING" || job.status === "RUNNING")) return job;
-  // Pas de nouvelle tentative en boucle après un échec récent (clé expirée, etc.).
-  if (job?.status === "FAILED" && job.finishedAt && Date.now() - job.finishedAt.getTime() < INCREMENTAL_EVERY_MS) return null;
-  return requestRiotSync(userId, identity.historySyncedAt ? "incremental" : "full");
+  if (!env.riotApiKey) return [];
+  const identities = await prisma.gameIdentity.findMany({ where: { userId, provider: "riot" } });
+  const jobs = [];
+  for (const identity of identities) {
+    if (identity.historySyncedAt && Date.now() - identity.historySyncedAt.getTime() < INCREMENTAL_EVERY_MS) continue;
+    const job = await prisma.analysisJob.findUnique({ where: { idempotencyKey: syncKey(identity.id) } });
+    if (job && (job.status === "PENDING" || job.status === "RUNNING")) {
+      jobs.push(job);
+      continue;
+    }
+    // Pas de nouvelle tentative en boucle après un échec récent (clé expirée, etc.).
+    if (job?.status === "FAILED" && job.finishedAt && Date.now() - job.finishedAt.getTime() < INCREMENTAL_EVERY_MS) continue;
+    jobs.push(await requestRiotSync(userId, identity.historySyncedAt ? "incremental" : "full", identity.id));
+  }
+  return jobs;
+}
+
+/** État de synchronisation de chaque compte Riot de l'utilisateur. */
+export async function syncStatuses(userId: string) {
+  const identities = await prisma.gameIdentity.findMany({ where: { userId, provider: "riot" }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] });
+  const jobs = await prisma.analysisJob.findMany({
+    where: { idempotencyKey: { in: identities.map((i) => syncKey(i.id)) } },
+    select: { idempotencyKey: true, status: true, progress: true, error: true, result: true },
+  });
+  return identities.map((i) => {
+    const j = jobs.find((x) => x.idempotencyKey === syncKey(i.id));
+    return { identityId: i.id, riotId: `${i.gameName}#${i.tagLine}`, primary: i.isPrimary, job: j ? { status: j.status, progress: j.progress, error: j.error, result: j.result } : null };
+  });
 }
 
 export async function runRiotSync(job: AnalysisJob, client?: RiotClient) {
@@ -140,9 +165,10 @@ export async function runRiotSync(job: AnalysisJob, client?: RiotClient) {
 }
 
 async function syncHistory(job: AnalysisJob, client?: RiotClient) {
-  const { userId, mode } = job.payload as { userId: string; mode: SyncMode };
+  const { userId, mode, identityId } = job.payload as { userId: string; mode: SyncMode; identityId?: string };
   const max = env.riotHistoryMax;
-  const identity = await primaryIdentity(userId);
+  const identity = identityId ? await prisma.gameIdentity.findFirst({ where: { id: identityId, userId } }) : await primaryIdentity(userId);
+  if (!identity) throw new PermanentJobError("Compte Riot retiré.");
   const c = client ?? riotClient(undefined, { maxRetries: 6, maxWaitSec: 120 });
   const puuid = await ensurePuuid(identity, c);
   const counts = { imported: 0, linked: 0, already: 0 };
@@ -168,7 +194,7 @@ async function syncHistory(job: AnalysisJob, client?: RiotClient) {
     await notify(userId, {
       type: "riot_sync",
       title: mode === "full" ? "Historique Riot importé" : "Nouvelles parties importées",
-      body: `${added} partie(s) ajoutée(s) à votre historique.`,
+      body: `${identity.gameName}#${identity.tagLine} : ${added} partie(s) ajoutée(s) à votre historique.`,
       link: "/app/matches",
     });
   return { mode, ...counts, scanned: seen, max };

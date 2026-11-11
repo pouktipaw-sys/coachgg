@@ -4,7 +4,7 @@ import { MODE_LABELS, ROLE_LABELS, ScorePill, fmtDuration } from "@/components/s
 import { requirePageUser } from "@/server/auth/page";
 import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
 import { prisma } from "@/server/db";
-import { autoSyncIfDue } from "@/server/riot/import";
+import { autoSyncIfDue, syncStatuses } from "@/server/riot/import";
 import { RiotSyncStatus } from "@/components/riot/RiotSyncStatus";
 
 export const metadata = { title: "Matchs & statistiques" };
@@ -15,9 +15,9 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
   const f = parseMatchFilters(sp);
   // Riot ID associé + clé configurée : import complet la première fois, puis mise à jour incrémentale.
   await autoSyncIfDue(user.id).catch(() => null);
-  const [identity, syncJob] = await Promise.all([
-    prisma.gameIdentity.findFirst({ where: { userId: user.id, provider: "riot", isPrimary: true }, select: { gameName: true, tagLine: true } }),
-    prisma.analysisJob.findUnique({ where: { idempotencyKey: `riot-sync:${user.id}` }, select: { status: true, progress: true, error: true, result: true } }),
+  const [syncAccounts, accounts] = await Promise.all([
+    syncStatuses(user.id),
+    prisma.gameIdentity.findMany({ where: { userId: user.id }, select: { id: true, gameName: true, tagLine: true }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] }),
   ]);
   const PER_PAGE = 50;
   const page = Math.max(1, Math.min(1000, Number(sp.page) || 1));
@@ -39,9 +39,7 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
         subtitle="Historique des parties enregistrées (saisie manuelle ou import Riot)."
         actions={<Link href="/app/matches/new" className="btn-primary">Ajouter un match</Link>}
       />
-      {identity && syncJob !== null && (
-        <RiotSyncStatus initial={JSON.parse(JSON.stringify(syncJob))} riotId={`${identity.gameName}#${identity.tagLine}`} />
-      )}
+      {syncAccounts.some((a) => a.job) && <RiotSyncStatus initial={JSON.parse(JSON.stringify(syncAccounts))} />}
       <form className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-7" aria-label="Filtres">
         <select name="period" defaultValue={f.period} className="input" aria-label="Période">
           <option value="all">Toute période</option>
@@ -63,6 +61,12 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
           <option value="solo">Sans membre de mes groupes</option>
           <option value="friends">Avec des amis</option>
         </select>
+        {accounts.length > 1 && (
+          <select name="account" defaultValue={f.account ?? ""} className="input" aria-label="Compte Riot">
+            <option value="">Tous mes comptes</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.gameName}#{a.tagLine}</option>)}
+          </select>
+        )}
         <select name="team" defaultValue={f.team ?? ""} className="input" aria-label="Groupe">
           <option value="">Tous groupes</option>
           {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
