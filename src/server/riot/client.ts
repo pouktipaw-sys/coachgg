@@ -47,7 +47,8 @@ export class RiotNotConfiguredError extends Error {
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export class RiotClient {
-  constructor(private key: string, private fetcher: FetchLike = fetch, private maxRetries = 2) {}
+  /** maxWaitSec : attente maximale respectée sur un 429 (tâches de fond : jusqu'à 2 min). */
+  constructor(private key: string, private fetcher: FetchLike = fetch, private maxRetries = 2, private maxWaitSec = 10) {}
 
   private async get<T>(url: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
@@ -59,7 +60,7 @@ export class RiotClient {
       }
       if (res.ok) return (await res.json()) as T;
       if (res.status === 429 && attempt < this.maxRetries) {
-        const wait = Math.min(10, Number(res.headers.get("retry-after") ?? 1));
+        const wait = Math.min(this.maxWaitSec, Number(res.headers.get("retry-after") ?? 1));
         await new Promise((r) => setTimeout(r, wait * 1000));
         continue;
       }
@@ -79,9 +80,10 @@ export class RiotClient {
     );
   }
 
-  matchIds(puuid: string, platform: string, count = 10) {
+  /** Identifiants de matchs, du plus récent au plus ancien (pagination : start, count ≤ 100). */
+  matchIds(puuid: string, platform: string, count = 10, start = 0) {
     return this.get<string[]>(
-      `https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=0&count=${Math.min(20, count)}`,
+      `https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=${Math.max(0, start)}&count=${Math.min(100, Math.max(1, count))}`,
     );
   }
 
@@ -136,10 +138,10 @@ export function participantTimeline(t: RiotTimeline, puuid: string) {
 
 export const RANKED_QUEUES: Record<string, string> = { RANKED_SOLO_5x5: "Classée solo/duo", RANKED_FLEX_SR: "Classée flexible" };
 
-export function riotClient(fetcher?: FetchLike): RiotClient {
+export function riotClient(fetcher?: FetchLike, opts: { maxRetries?: number; maxWaitSec?: number } = {}): RiotClient {
   const key = env.riotApiKey;
   if (!key) throw new RiotNotConfiguredError();
-  return new RiotClient(key, fetcher);
+  return new RiotClient(key, fetcher, opts.maxRetries ?? 2, opts.maxWaitSec ?? 10);
 }
 
 // ───────────── Types (sous-ensemble utilisé) et conversion ─────────────

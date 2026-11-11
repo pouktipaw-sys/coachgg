@@ -53,6 +53,8 @@ model User {
   devices         Device[]
   pairingCodes    DevicePairingCode[]
   coachThreads    CoachThread[]
+  teammates       Teammate[]
+  peerVotes       PeerVote[]
 }
 
 // ─────────────────────────── Coach conversationnel ───────────────────────────
@@ -171,6 +173,8 @@ model GameIdentity {
   // Rang (API Riot LEAGUE-V4), instantané au moment de la récupération
   rank          Json?
   rankFetchedAt DateTime?
+  // Synchronisation de l'historique Riot (import complet puis incrémental)
+  historySyncedAt DateTime?
   createdAt    DateTime             @default(now())
 
   @@unique([userId, provider, gameName, tagLine])
@@ -243,6 +247,7 @@ model Match {
   recordings   Recording[]
   teamReports  TeamMatchReport[]
   observations Observation[]
+  peerVotes    PeerVote[]
 
   @@index([createdById])
 }
@@ -264,6 +269,7 @@ model MatchParticipant {
 
   statistics MatchStatistics?
   scores     PerformanceScore[]
+  votesReceived PeerVote[]
 
   @@index([matchId])
   @@index([userId])
@@ -401,6 +407,7 @@ enum JobType {
   PROCESS_RECORDING // validation ffprobe + transcodage + miniature
   ANALYZE_RECORDING // analyse vidéo assistée (phase 4)
   COMPUTE_SCORES
+  RIOT_SYNC // import de l'historique Riot (complet ou incrémental)
 }
 
 enum JobStatus {
@@ -793,4 +800,42 @@ model TeamEmailInvite {
 
   @@index([email])
   @@index([teamId])
+}
+
+// ─────────────────────────── Coéquipiers & votes ───────────────────────────
+
+/** Coéquipier suivi par un utilisateur (Riot ID déclaré ; pas forcément un compte CoachGG). */
+model Teammate {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  gameName  String
+  tagLine   String
+  platform  String
+  puuid     String?
+  nickname  String?
+  createdAt DateTime @default(now())
+
+  @@unique([ownerId, gameName, tagLine])
+  @@index([puuid])
+}
+
+/** Note donnée par un joueur à un coéquipier après une partie (élection du MVP et catégories). */
+model PeerVote {
+  id        String           @id @default(cuid())
+  matchId   String
+  match     Match            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  voterId   String
+  voter     User             @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  targetId  String
+  target    MatchParticipant @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  score     Int // 1 à 10
+  mvp       Boolean          @default(false)
+  awards    String[] // catégories attribuées (une cible par catégorie et par votant)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([matchId, voterId, targetId])
+  @@index([targetId])
+  @@index([voterId])
 }

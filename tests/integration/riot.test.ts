@@ -2,7 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/server/db";
 import { RiotApiError, RiotClient, convertRiotMatch, participantTimeline, regionalRoute, type RiotMatch, type RiotTimeline } from "@/server/riot/client";
-import { importRecentMatches, refreshRank } from "@/server/riot/import";
+import { autoSyncIfDue, importRecentMatches, refreshRank, requestRiotSync, runRiotSync } from "@/server/riot/import";
+import { PermanentJobError } from "@/server/jobs";
 import { makeUser } from "./helpers";
 
 function fakeMatch(id: string, puuids: string[]): RiotMatch {
@@ -162,5 +163,56 @@ describe("intégration Riot (simulée)", () => {
     expect(updated.rankFetchedAt).toBeInstanceOf(Date);
     const other = await makeUser("Bob");
     await expect(refreshRank(other.id, id.id, client)).rejects.toThrow();
+  });
+  it("synchronise tout l'historique puis seulement les nouvelles parties ; limite configurable ; clé refusée = échec définitif", async () => {
+    const u = await makeUser("Ana");
+    await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Ana", tagLine: "EUW", platform: "EUW1", puuid: "PUUID-ANA" } });
+    let ids = ["EUW1_3", "EUW1_2", "EUW1_1"];
+    const calls: string[] = [];
+    const client = () =>
+      new RiotClient(
+        "k",
+        async (url: string) => {
+          calls.push(url);
+          if (url.includes("/ids?")) return new Response(JSON.stringify(new URL(url).searchParams.get("start") === "0" ? ids : []), { status: 200 });
+          const m = /matches\/(EUW1_\d+)$/.exec(url);
+          if (m) return new Response(JSON.stringify(fakeMatch(m[1]!, ["PUUID-ANA"])), { status: 200 });
+          if (url.includes("/league/")) return new Response("[]", { status: 200 });
+          return new Response("{}", { status: 404 });
+        },
+      );
+    const job = await requestRiotSync(u.id, "full");
+    const r = await runRiotSync(job, client());
+    expect(r).toMatchObject({ mode: "full", imported: 3, scanned: 3 });
+    expect(calls[0]).toContain("/ids?start=0&count=");
+    expect((await prisma.gameIdentity.findFirstOrThrow({ where: { userId: u.id } })).historySyncedAt).toBeInstanceOf(Date);
+    expect(await prisma.notification.count({ where: { userId: u.id, type: "riot_sync" } })).toBe(1);
+
+    // Incrémental : une nouvelle partie, arrêt à la première déjà connue
+    ids = ["EUW1_4", "EUW1_3", "EUW1_2", "EUW1_1"];
+    calls.length = 0;
+    const r2 = await runRiotSync({ ...job, payload: { userId: u.id, mode: "incremental" } }, client());
+    expect(r2).toMatchObject({ imported: 1, already: 1, scanned: 2 });
+    expect(calls.filter((c) => /matches\/EUW1_\d+$/.test(c))).toHaveLength(1);
+
+    // Limite du nombre de parties
+    process.env.RIOT_HISTORY_MAX = "2";
+    try {
+      const v = await makeUser("Vi");
+      await prisma.gameIdentity.create({ data: { userId: v.id, gameName: "Vi", tagLine: "EUW", platform: "EUW1", puuid: "PUUID-ANA" } });
+      const r3 = await runRiotSync(await requestRiotSync(v.id, "full"), client());
+      expect(r3.scanned).toBe(2);
+    } finally {
+      delete process.env.RIOT_HISTORY_MAX;
+    }
+
+    const refused = new RiotClient("k", async () => new Response("{}", { status: 403 }));
+    await expect(runRiotSync(job, refused)).rejects.toBeInstanceOf(PermanentJobError);
+  });
+
+  it("sans clé Riot configurée, aucune synchronisation automatique", async () => {
+    const u = await makeUser("Ana");
+    await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Ana", tagLine: "EUW", platform: "EUW1" } });
+    expect(await autoSyncIfDue(u.id)).toBeNull();
   });
 });

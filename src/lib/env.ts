@@ -64,6 +64,10 @@ export const env = {
   get mailFrom() {
     return process.env.MAIL_FROM?.trim() || "CoachGG <no-reply@localhost>";
   },
+  /** Nombre maximal de parties importées lors de la synchronisation de l'historique Riot. */
+  get riotHistoryMax() {
+    return int("RIOT_HISTORY_MAX", 200);
+  },
   get isProd() {
     return process.env.NODE_ENV === "production";
   },

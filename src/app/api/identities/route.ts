@@ -3,6 +3,8 @@ import { authed, json, readJson } from "@/server/http";
 import { prisma } from "@/server/db";
 import { HttpError } from "@/server/errors";
 import { PLATFORMS } from "@/server/riot/client";
+import { requestRiotSync } from "@/server/riot/import";
+import { env } from "@/lib/env";
 
 // Riot ID : « NomDeJeu#TAG ». Aucun mot de passe Riot n'est jamais demandé.
 const schema = z.object({
@@ -21,5 +23,7 @@ export const POST = authed(async (req, user) => {
   if (exists) throw new HttpError(409, "exists", "Cette identité est déjà associée.");
   await prisma.gameIdentity.updateMany({ where: { userId: user.id }, data: { isPrimary: false } });
   const identity = await prisma.gameIdentity.create({ data: { userId: user.id, ...input, verification: "DECLARED", isPrimary: true } });
-  return json({ identity }, 201);
+  // Clé Riot configurée : tout l'historique est importé en tâche de fond.
+  const historySync = env.riotApiKey ? await requestRiotSync(user.id, "full").then(() => true).catch(() => false) : false;
+  return json({ identity, historySync }, 201);
 });

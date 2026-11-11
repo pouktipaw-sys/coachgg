@@ -9,6 +9,7 @@ import { purgeExpiredRecordings } from "../server/retention";
 import { sendWeeklyReviews } from "../server/progress";
 import { exportClip, markExportFailed } from "../server/clipExport";
 import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
+import { runRiotSync } from "../server/riot/import";
 
 const workerId = `${os.hostname()}:${process.pid}`;
 let stopping = false;
@@ -31,6 +32,9 @@ export async function runJob(job: AnalysisJob) {
       }
       case "EXPORT_CLIP":
         result = await exportClip(job);
+        break;
+      case "RIOT_SYNC":
+        result = await runRiotSync(job);
         break;
       default:
         throw new Error(`Type de tâche non pris en charge : ${job.type}`);

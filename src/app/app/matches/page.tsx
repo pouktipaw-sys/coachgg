@@ -4,6 +4,8 @@ import { MODE_LABELS, ROLE_LABELS, ScorePill, fmtDuration } from "@/components/s
 import { requirePageUser } from "@/server/auth/page";
 import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
 import { prisma } from "@/server/db";
+import { autoSyncIfDue } from "@/server/riot/import";
+import { RiotSyncStatus } from "@/components/riot/RiotSyncStatus";
 
 export const metadata = { title: "Matchs & statistiques" };
 
@@ -11,11 +13,22 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
   const user = await requirePageUser();
   const sp = await searchParams;
   const f = parseMatchFilters(sp);
-  const [rows, teams] = await Promise.all([
-    listUserMatches(user.id, f),
+  // Riot ID associé + clé configurée : import complet la première fois, puis mise à jour incrémentale.
+  await autoSyncIfDue(user.id).catch(() => null);
+  const [identity, syncJob] = await Promise.all([
+    prisma.gameIdentity.findFirst({ where: { userId: user.id, provider: "riot", isPrimary: true }, select: { gameName: true, tagLine: true } }),
+    prisma.analysisJob.findUnique({ where: { idempotencyKey: `riot-sync:${user.id}` }, select: { status: true, progress: true, error: true, result: true } }),
+  ]);
+  const PER_PAGE = 50;
+  const page = Math.max(1, Math.min(1000, Number(sp.page) || 1));
+  const [fetched, teams] = await Promise.all([
+    listUserMatches(user.id, f, PER_PAGE + 1, (page - 1) * PER_PAGE),
     prisma.team.findMany({ where: { memberships: { some: { userId: user.id } } }, select: { id: true, name: true } }),
   ]);
-  const filtered = Object.values(sp).some(Boolean);
+  const rows = fetched.slice(0, PER_PAGE);
+  const hasMore = fetched.length > PER_PAGE;
+  const filtered = Object.entries(sp).some(([k, v]) => k !== "page" && !!v);
+  const pageHref = (n: number) => `/app/matches?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => !!v)) as Record<string, string>, page: String(n) })}`;
 
   return (
     <div>
@@ -24,6 +37,9 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
         subtitle="Historique des parties enregistrées (saisie manuelle ou import Riot)."
         actions={<Link href="/app/matches/new" className="btn-primary">Ajouter un match</Link>}
       />
+      {identity && syncJob !== null && (
+        <RiotSyncStatus initial={JSON.parse(JSON.stringify(syncJob))} riotId={`${identity.gameName}#${identity.tagLine}`} />
+      )}
       <form className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-7" aria-label="Filtres">
         <select name="period" defaultValue={f.period} className="input" aria-label="Période">
           <option value="all">Toute période</option>
@@ -100,6 +116,13 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
             </tbody>
           </table>
         </div>
+      )}
+      {(page > 1 || hasMore) && (
+        <nav className="mt-3 flex items-center gap-3 text-sm" aria-label="Pages">
+          {page > 1 && <Link className="btn-ghost" href={pageHref(page - 1)}>← Plus récents</Link>}
+          <span className="text-muted">Page {page}</span>
+          {hasMore && <Link className="btn-ghost" href={pageHref(page + 1)} data-testid="matches-next">Plus anciens →</Link>}
+        </nav>
       )}
       <p className="mt-3 text-xs text-muted">* fiabilité faible (partie courte ou données partielles). La note est expérimentale (formule perf-1.0.0).</p>
     </div>

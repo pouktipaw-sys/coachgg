@@ -38,7 +38,7 @@ export function parseMatchFilters(raw: Record<string, string | undefined>): Matc
 }
 
 /** Historique de l'utilisateur, avec sa ligne de participant, sa note et le nombre d'amis présents. */
-export async function listUserMatches(userId: string, f: MatchFilters, take = 100) {
+export async function listUserMatches(userId: string, f: MatchFilters, take = 100, skip = 0) {
   const days = { "7d": 7, "30d": 30, "90d": 90, all: null }[f.period];
   const since = days ? new Date(Date.now() - days * 86400_000) : null;
   const mine: Prisma.MatchParticipantWhereInput = {
@@ -62,8 +62,9 @@ export async function listUserMatches(userId: string, f: MatchFilters, take = 10
   };
   const matches = await prisma.match.findMany({
     where,
-    orderBy: [{ gameStartAt: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ gameStartAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take,
+    skip,
     include: {
       participants: {
         where: { OR: [{ userId }, { userId: { in: friendIds } }] },

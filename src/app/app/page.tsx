@@ -3,6 +3,7 @@ import { Badge, EmptyState, PageHeader, RECORDING_STATUS } from "@/components/ui
 import { ROLE_LABELS, ScorePill, Sparkline, formatRank, type RankEntry } from "@/components/stats";
 import { integrationStatus } from "@/lib/env";
 import { requirePageUser } from "@/server/auth/page";
+import { autoSyncIfDue } from "@/server/riot/import";
 import { prisma } from "@/server/db";
 import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
 import { goalProgress } from "@/server/goals";
@@ -14,6 +15,7 @@ export const metadata = { title: "Tableau de bord" };
 
 export default async function Dashboard() {
   const user = await requirePageUser();
+  await autoSyncIfDue(user.id).catch(() => null);
   const [profile, identity, matches, recordings, moments, goal, teams, jobs, scores] = await Promise.all([
     prisma.playerProfile.findUnique({ where: { userId: user.id } }),
     prisma.gameIdentity.findFirst({ where: { userId: user.id, isPrimary: true } }),
