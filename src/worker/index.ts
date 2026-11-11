@@ -10,6 +10,7 @@ import { sendWeeklyReviews } from "../server/progress";
 import { exportClip, markExportFailed } from "../server/clipExport";
 import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
 import { runRiotSync } from "../server/riot/import";
+import { markRecapFailed, renderRecap } from "../server/recap";
 
 const workerId = `${os.hostname()}:${process.pid}`;
 let stopping = false;
@@ -33,6 +34,9 @@ export async function runJob(job: AnalysisJob) {
       case "EXPORT_CLIP":
         result = await exportClip(job);
         break;
+      case "RENDER_RECAP":
+        result = await renderRecap(job);
+        break;
       case "RIOT_SYNC":
         result = await runRiotSync(job);
         break;
@@ -47,6 +51,9 @@ export async function runJob(job: AnalysisJob) {
     const clipId = (job.payload as { clipId?: string } | null)?.clipId;
     if (outcome !== "retry" && job.type === "EXPORT_CLIP" && clipId) {
       await markExportFailed(clipId, e instanceof Error ? e.message : "Échec du rendu.");
+    }
+    if (outcome !== "retry" && job.type === "RENDER_RECAP" && job.recordingId) {
+      await markRecapFailed(job.recordingId, e instanceof Error ? e.message : "Échec du montage.");
     }
     if (outcome === "failed" && job.type === "PROCESS_RECORDING" && job.recordingId) {
       await markRecordingFailed(job.recordingId, e instanceof Error ? e.message : "Échec du traitement.");

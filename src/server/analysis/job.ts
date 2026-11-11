@@ -13,6 +13,8 @@ import { notify } from "../notifications";
 import { AnalyzerError, AnalyzerUnavailableError, analyzerAvailable, runAnalyzer } from "./runner";
 import { buildProposals, RULES_VERSION } from "@/lib/analysis/rules";
 import { autoClipsFrom } from "@/lib/analysis/autoClips";
+import { AI_MAX_MOMENTS, AI_VERSION, AiAnalysisError, aiDeps, aiEnabled, aiModel, gameReportAi, gameReportRules, proposalFromReview, reviewMoment, type GameReport } from "./ai";
+import { requestRecap } from "../recap";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 type Step = { name: string; status: "ok" | "skipped" | "warning" | "failed"; ms: number; note?: string };
@@ -125,6 +127,46 @@ export async function analyzeRecording(job: AnalysisJob) {
       return { value: p, note: `${p.length} proposition(s).` };
     });
 
+    // 8 bis. Analyse par IA (Claude) des morts probables : observations, alternative, conseil et schéma.
+    let costMicros = 0;
+    if (aiEnabled()) {
+      await step("Analyse IA des moments (Claude)", async () => {
+        const deaths = proposals.map((p, i) => ({ p, i })).filter(({ p }) => (p.evidence as { type?: string }).type === "grey_screen").slice(0, AI_MAX_MOMENTS);
+        let ok = 0;
+        const errors: string[] = [];
+        for (const { p, i } of deaths) {
+          try {
+            const r = await reviewMoment(
+              {
+                video: storage().localPath(rec.playbackKey!),
+                tmp,
+                index: i,
+                contextStartMs: p.recommendation.contextStartMs,
+                // La règle place la décision 2 s avant l'écran grisé.
+                deathMs: p.recommendation.decisionMs + 2000,
+                gameStartOffsetMs: rec.gameStartOffsetMs,
+                ruleObservations: p.recommendation.observations,
+              },
+              aiDeps.client(),
+            );
+            costMicros += r.costMicros;
+            const replaced = proposalFromReview(p, r.review, r.times, r.model, rec.durationMs!);
+            if (replaced) {
+              proposals[i] = replaced;
+              ok++;
+            } else errors.push(`image illisible à ${p.recommendation.decisionMs} ms`);
+          } catch (e) {
+            costMicros += (e as { costMicros?: number }).costMicros ?? 0;
+            errors.push(e instanceof AiAnalysisError ? e.message : "erreur inattendue");
+            if (e instanceof AiAnalysisError && e.kind === "auth") break;
+          }
+          await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros } }).catch(() => {});
+        }
+        const note = `${ok}/${deaths.length} moment(s) analysé(s) par ${aiModel()} · coût estimé ${(costMicros / 1e6).toFixed(3)} $${errors.length ? ` · non analysés : ${[...new Set(errors)].join(" ; ")}` : ""}`;
+        return { value: ok, status: errors.length && !ok && deaths.length ? "warning" : "ok", note };
+      });
+    }
+
     // 9-10. Annotations + rapport : remplace les brouillons automatiques précédents (idempotent)
     const created = await step("Annotations et enregistrement pour revue", async () => {
       const still = await prisma.recording.findUnique({ where: { id: rec.id }, select: { id: true } });
@@ -165,7 +207,7 @@ export async function analyzeRecording(job: AnalysisJob) {
             confidenceReason: r.confidenceReason,
             advice: r.advice,
             provenance: "AUTOMATIC",
-            analysisVersion: RULES_VERSION,
+            analysisVersion: (p.evidence as { ai?: { model: string } }).ai ? `${AI_VERSION} (${(p.evidence as { ai: { model: string } }).ai.model})` : RULES_VERSION,
             status: "DRAFT",
             analysisJobId: job.id,
             autoEvidence: p.evidence as Prisma.InputJsonValue,
@@ -223,6 +265,47 @@ export async function analyzeRecording(job: AnalysisJob) {
         });
       const deaths = fresh.filter((c) => c.kind === "DEATH").length;
       return { value: fresh.length, note: `${fresh.length} clip(s) créé(s) : ${deaths} mort(s), ${fresh.length - deaths} combat(s).` };
+    });
+
+    // 12. Bilan écrit de la partie (IA si disponible, sinon construit à partir des moments).
+    const report = await step<GameReport>("Bilan de la partie", async () => {
+      const moments = await prisma.recommendation.findMany({
+        where: { recordingId: rec.id, status: { not: "REJECTED" } },
+        orderBy: { decisionMs: "asc" },
+        select: { title: true, kind: true, category: true, advice: true, decisionMs: true, provenance: true, status: true },
+      });
+      const lite = moments.map((m) => ({ title: m.title, kind: m.kind, category: m.category, advice: m.advice, decisionMs: m.decisionMs, automatic: m.provenance === "AUTOMATIC" && m.status === "DRAFT" }));
+      const deaths = moments.filter((m) => /mort|écran grisé/i.test(m.title)).length;
+      let body = gameReportRules(lite);
+      let source: GameReport["source"] = "rules";
+      let model: string | undefined;
+      if (aiEnabled() && lite.length) {
+        try {
+          const stats = rec.matchId
+            ? await prisma.matchParticipant
+                .findFirst({ where: { matchId: rec.matchId, userId: rec.ownerId }, include: { statistics: true } })
+                .then((p) => (p?.statistics ? `${p.championName}, ${p.win ? "victoire" : "défaite"}, ${p.statistics.kills}/${p.statistics.deaths}/${p.statistics.assists}, ${p.statistics.creepScore ?? "?"} CS, vision ${p.statistics.visionScore ?? "?"}` : null))
+            : null;
+          const r = await gameReportAi(lite, stats, aiDeps.client());
+          costMicros += r.costMicros;
+          body = r.report;
+          source = "ai";
+          model = r.model;
+        } catch (e) {
+          costMicros += (e as { costMicros?: number }).costMicros ?? 0;
+        }
+      }
+      const full: GameReport = { ...body, source, model, moments: lite.length, deaths, generatedAt: new Date().toISOString() };
+      await prisma.recording.update({ where: { id: rec.id }, data: { gameReport: full as unknown as Prisma.InputJsonValue } });
+      if (costMicros) await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros } });
+      return { value: full, note: source === "ai" ? `Rédigé par ${model}.` : "Construit à partir des moments détectés (sans IA)." };
+    });
+
+    // 13. Vidéo récap : intro, chaque moment annoté (ralenti, pause, schéma, conseil), bilan.
+    await step("Vidéo récap", async () => {
+      if (!report.moments) return { value: null, status: "skipped", note: "Aucun moment à monter." };
+      await requestRecap(rec.id);
+      return { value: null, note: "Montage lancé en tâche de fond." };
     });
 
     const partial = steps.some((s) => s.status === "warning");

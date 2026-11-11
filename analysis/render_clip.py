@@ -258,6 +258,8 @@ def explanation_panel(layer, m, fonts, w, h):
     if m.get("advice"):
         lines.append(("label", "Conseil"))
         lines += [("body", l) for l in wrap(d, m["advice"], body, pw - 32)]
+    if m.get("origin"):
+        lines.append(("muted", m["origin"]))
     lines.append(("muted", f"{m.get('confidence', '')} · une alternative est une proposition, pas une certitude"))
     heights = {"title": 30, "label": 24, "body": 22, "alt": 22, "muted": 20}
     ph = 24 + sum(heights[k] for k, _ in lines)
@@ -295,9 +297,7 @@ def footer(layer, text, f):
 # ───────────────────────────────── rendu ─────────────────────────────────
 
 def render(spec: dict):
-    src_w, src_h = spec["width"], spec["height"]
-    out_w = min(OUT_W, src_w - src_w % 2)
-    out_h = int(round(out_w * src_h / src_w / 2) * 2)
+    out_w, out_h = out_size(spec["width"], spec["height"])
     start, end = spec["startMs"], spec["endMs"]
     sp = Space(out_w, out_h, spec.get("minimap"))
     fonts = {"tag": font(15), "body": font(17), "title": font(20, True), "small": font(13), "banner": font(17, True)}
@@ -378,10 +378,92 @@ def render(spec: dict):
     return {"frames": written, "durationSec": round(written / FPS, 2), "width": out_w, "height": out_h}
 
 
+def out_size(src_w: int, src_h: int):
+    out_w = min(OUT_W, src_w - src_w % 2)
+    return out_w, int(round(out_w * src_h / src_w / 2) * 2)
+
+
+def render_card(spec: dict):
+    """Carte fixe (titre, sections) encodée comme les clips : même taille, même format → concaténable."""
+    out_w, out_h = out_size(spec["width"], spec["height"])
+    img = Image.new("RGB", (out_w, out_h), (11, 14, 21))
+    d = ImageDraw.Draw(img)
+    scale = out_w / 1280
+    f_title, f_sub = font(int(40 * scale) or 20, True), font(int(22 * scale) or 12)
+    f_label, f_body = font(int(16 * scale) or 10, True), font(int(22 * scale) or 12)
+    d.rectangle([0, 0, out_w, int(6 * scale) or 3], fill=(76, 157, 255))
+    x, y = int(70 * scale), int(60 * scale)
+    for line in wrap(d, spec.get("title", ""), f_title, out_w - 2 * x):
+        d.text((x, y), line, font=f_title, fill=(255, 255, 255))
+        y += int(50 * scale)
+    if spec.get("subtitle"):
+        d.text((x, y), spec["subtitle"], font=f_sub, fill=(139, 149, 168))
+        y += int(44 * scale)
+    for sec in spec.get("sections", []):
+        y += int(14 * scale)
+        if y > out_h - 80 * scale:
+            break
+        d.text((x, y), sec.get("label", "").upper(), font=f_label, fill=tuple(sec.get("color", (76, 157, 255))))
+        y += int(28 * scale)
+        for item in sec.get("lines", []):
+            for i, line in enumerate(wrap(d, item, f_body, out_w - 2 * x - 30)):
+                if y > out_h - 70 * scale:
+                    break
+                d.text((x + (0 if i else 0), y), ("• " if i == 0 else "  ") + line, font=f_body, fill=(230, 233, 239))
+                y += int(30 * scale)
+    if spec.get("footer"):
+        footer_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        footer(footer_layer, spec["footer"], font(13))
+        img = Image.alpha_composite(img.convert("RGBA"), footer_layer).convert("RGB")
+    ffmpeg = spec.get("ffmpeg", "ffmpeg")
+    enc = subprocess.Popen(
+        [ffmpeg, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{out_w}x{out_h}", "-r", str(FPS), "-i", "-",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-movflags", "+faststart", spec["out"]],
+        stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    frames = int(spec.get("seconds", 4) * FPS)
+    raw = img.tobytes()
+    for _ in range(frames):
+        enc.stdin.write(raw)
+    enc.stdin.close()
+    enc.wait()
+    if enc.returncode != 0:
+        raise RuntimeError("Encodage de la carte échoué.")
+    return {"frames": frames, "durationSec": round(frames / FPS, 2), "width": out_w, "height": out_h}
+
+
+def render_recap(spec: dict):
+    """Récap : carte d'intro, chaque moment annoté (ralenti, pause, schéma, conseil), carte de bilan — un seul MP4."""
+    work = os.path.dirname(spec["out"])
+    parts, total = [], 0.0
+    items = spec.get("items", [])
+    for i, item in enumerate(items):
+        part = os.path.join(work, f"part-{i:03d}.mp4")
+        sub = {**item, "out": part, "width": spec["width"], "height": spec["height"], "ffmpeg": spec.get("ffmpeg", "ffmpeg")}
+        r = render_card(sub) if item.get("mode") == "card" else render(sub)
+        total += r["durationSec"]
+        parts.append(part)
+        progress(100 * (i + 1) / max(1, len(items)))
+    lst = os.path.join(work, "parts.txt")
+    with open(lst, "w", encoding="utf-8") as fh:
+        for p in parts:
+            fh.write("file '" + p.replace("'", "'\\''") + "'\n")
+    r = subprocess.run([spec.get("ffmpeg", "ffmpeg"), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", "-movflags", "+faststart", spec["out"]],
+                       stderr=subprocess.PIPE)
+    if r.returncode != 0:
+        raise RuntimeError("Assemblage du récap échoué : " + r.stderr.decode(errors="replace")[-300:])
+    for p in parts:
+        os.remove(p)
+    w, h = out_size(spec["width"], spec["height"])
+    return {"parts": len(parts), "durationSec": round(total, 2), "width": w, "height": h}
+
+
 if __name__ == "__main__":
     try:
         with open(sys.argv[1], encoding="utf-8") as fh:
-            result = render(json.load(fh))
+            spec = json.load(fh)
+        mode = spec.get("mode", "clip")
+        result = render_recap(spec) if mode == "recap" else render_card(spec) if mode == "card" else render(spec)
         json.dump(result, sys.stdout)
         progress(100)
     except Exception as e:  # message lisible pour le worker

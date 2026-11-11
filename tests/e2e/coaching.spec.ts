@@ -256,6 +256,17 @@ test("analyse assistée : proposition automatique en brouillon, revue et validat
   await expect(page.locator("[data-testid=truth-list]")).toContainText("0:13");
   await expect(page.locator("[data-testid=evaluation-result]")).toContainText("Précision");
   await expect(page.locator("[data-testid=evaluation-result]")).toContainText("1 correcte(s) · 0 fausse(s) alerte(s) · 0 mort(s) manquée(s)");
+
+  // Fin d'analyse : bilan de la partie (sans IA ici) et vidéo récap lisible.
+  await expect(async () => {
+    await page.reload();
+    await expect(page.locator("[data-testid=recap-video]")).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 60_000 });
+  await expect(page.locator("[data-testid=game-report]")).toContainText("Objectif pour la prochaine partie");
+  const recapDuration = await page.locator("[data-testid=recap-video]").evaluate(
+    (v: HTMLVideoElement) => new Promise<number>((r) => (v.readyState >= 1 ? r(v.duration) : v.addEventListener("loadedmetadata", () => r(v.duration), { once: true }))),
+  );
+  expect(recapDuration).toBeGreaterThan(12);
 });
 
 test("application PC : appairage, enregistrement d'une partie simulée, envoi automatique", async ({ page }) => {

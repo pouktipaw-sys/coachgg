@@ -4,7 +4,6 @@
 // qui vérifient les permissions.
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
-import { Readable } from "node:stream";
 import { env } from "@/lib/env";
 
 const KEY_RE = /^[a-zA-Z0-9_\-./]+$/;
@@ -67,7 +66,44 @@ class LocalDiskStorage implements StorageDriver {
 
   readStream(key: string, range?: { start: number; end: number }) {
     const node = createReadStream(this.localPath(key), range ? { start: range.start, end: range.end } : {});
-    return Readable.toWeb(node) as ReadableStream<Uint8Array>;
+    // Flux avec contre-pression ; s'arrête proprement si le client abandonne (seek, rechargement) :
+    // sans cela, une écriture après fermeture lève une exception non interceptée.
+    let closed = false;
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        node.on("data", (chunk) => {
+          if (closed) return;
+          try {
+            controller.enqueue(new Uint8Array(chunk as Buffer));
+            if ((controller.desiredSize ?? 1) <= 0) node.pause();
+          } catch {
+            closed = true;
+            node.destroy();
+          }
+        });
+        node.on("end", () => {
+          if (closed) return;
+          closed = true;
+          try {
+            controller.close();
+          } catch {}
+        });
+        node.on("error", (e) => {
+          if (closed) return;
+          closed = true;
+          try {
+            controller.error(e);
+          } catch {}
+        });
+      },
+      pull() {
+        node.resume();
+      },
+      cancel() {
+        closed = true;
+        node.destroy();
+      },
+    });
   }
 
   async importFile(key: string, sourcePath: string) {

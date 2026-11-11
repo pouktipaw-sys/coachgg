@@ -4,6 +4,7 @@ import { CoachingStudio } from "@/components/video/CoachingStudio";
 import { RecordingStatusPanel } from "@/components/video/RecordingStatusPanel";
 import { RecordingSettings } from "@/components/video/RecordingSettings";
 import { AnalysisPanel, type AnalysisJobDTO } from "@/components/video/AnalysisPanel";
+import { GameRecapPanel, type GameReportDTO } from "@/components/video/GameRecapPanel";
 import { EvaluationPanel } from "@/components/video/EvaluationPanel";
 import { integrationStatus } from "@/lib/env";
 import { Badge, PageHeader, RECORDING_STATUS } from "@/components/ui";
@@ -75,6 +76,15 @@ export default async function VideoPage({ params, searchParams }: { params: Prom
         />
       ) : (
         <RecordingStatusPanel id={rec.id} status={rec.status} errorMessage={rec.errorMessage} isOwner={isOwner} />
+      )}
+      {isOwner && rec.status === "READY" && (rec.gameReport || rec.recapStatus) && (
+        <div className="mt-6">
+          <GameRecapPanel
+            recordingId={rec.id}
+            report={toPlain<GameReportDTO>(rec.gameReport)}
+            recap={{ status: rec.recapStatus, error: rec.recapError, at: rec.recapAt ? new Date(rec.recapAt).toISOString() : null }}
+          />
+        </div>
       )}
       {isOwner && rec.status === "READY" && (
         <div className="mt-6">

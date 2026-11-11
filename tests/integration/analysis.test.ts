@@ -30,6 +30,8 @@ describe.skipIf(!available)("analyse vidéo assistée (Python/OpenCV réels)", (
       "Propositions (règles auto-0.1.0)",
       "Annotations et enregistrement pour revue",
       "Découpage automatique en clips",
+      "Bilan de la partie",
+      "Vidéo récap",
     ]);
     expect(res.warnings.join(" ")).toMatch(/minimap non définie/);
     expect(job.processingMs).toBeGreaterThan(0);
@@ -70,12 +72,12 @@ describe.skipIf(!available)("analyse vidéo assistée (Python/OpenCV réels)", (
     await requestAnalysis(id, 10, { deaths: false, fights: false });
     await drain();
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
-    expect((job.result as { steps: { name: string; status: string }[] }).steps.at(-1)).toMatchObject({ status: "skipped" });
+    expect((job.result as { steps: { name: string; status: string }[] }).steps.find((x) => x.name === "Découpage automatique en clips")).toMatchObject({ status: "skipped" });
     await prisma.playerProfile.update({ where: { userId: u.id }, data: { autoClipDeaths: true } });
     await requestAnalysis(id, 10);
     await drain();
     expect(await prisma.clip.count({ where: { recordingId: id, kind: "DEATH" } })).toBe(1);
-  });
+  }, 240_000); // trois analyses, chacune suivie du montage du récap
 
   it("avec la minimap définie : hausse de marqueurs rouges mesurée avant la mort, alternative conditionnelle, annotation minimap", async () => {
     const u = await makeUser("Bob");

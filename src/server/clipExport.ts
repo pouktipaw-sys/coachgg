@@ -92,7 +92,7 @@ export async function exportClip(job: AnalysisJob) {
   }
 }
 
-function runRenderer(specPath: string, jobId: string) {
+export function runRenderer(specPath: string, jobId: string) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(env.pythonBin, [RENDERER, specPath], { stdio: ["ignore", "pipe", "pipe"] });
     let err = "";

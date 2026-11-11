@@ -354,6 +354,12 @@ model Recording {
   device          Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   capturedAt      DateTime?
   clientUploadId  String? // clé d'idempotence fournie par l'appareil
+  // Fin d'analyse : bilan écrit de la partie et vidéo récap (moments annotés enchaînés)
+  gameReport      Json?
+  recapKey        String?
+  recapStatus     String? // PENDING | RUNNING | READY | FAILED
+  recapError      String?
+  recapAt         DateTime?
 
   @@unique([deviceId, clientUploadId])
   @@index([ownerId, createdAt])
@@ -410,6 +416,7 @@ enum JobType {
   ANALYZE_RECORDING // analyse vidéo assistée (phase 4)
   COMPUTE_SCORES
   RIOT_SYNC // import de l'historique Riot (complet ou incrémental)
+  RENDER_RECAP // vidéo récap d'une partie analysée
 }
 
 enum JobStatus {

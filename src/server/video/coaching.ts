@@ -18,7 +18,7 @@ function assertWithinDuration(durationMs: number | null, ...times: number[]) {
 
 export async function getCoachingData(userId: string, recordingId: string) {
   const access = await requireRecordingView(userId, recordingId);
-  const recording = await prisma.recording.findUniqueOrThrow({
+  const full = await prisma.recording.findUniqueOrThrow({
     where: { id: recordingId },
     include: {
       match: { select: { id: true, gameMode: true, durationSec: true, source: true, isDemo: true } },
@@ -33,6 +33,8 @@ export async function getCoachingData(userId: string, recordingId: string) {
     }),
     prisma.videoAnnotation.findMany({ where: { recordingId, ...visibleAnnotationWhere(access === "owner") }, orderBy: { startMs: "asc" } }),
   ]);
+  // Bilan et récap : réservés au propriétaire (ils reprennent des propositions non validées).
+  const recording = access === "owner" ? full : { ...full, gameReport: null, recapKey: null, recapStatus: null, recapError: null, recapAt: null };
   return { access, recording, recommendations, annotations };
 }
 
