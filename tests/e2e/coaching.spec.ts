@@ -217,9 +217,10 @@ test("groupe d'amis : invitation, match commun et MVP", async ({ page, browser }
   await expect(page.locator("[data-testid=elected-mvp]")).toContainText("Bob");
 
   // Coéquipier suivi par Riot ID : partie commune retrouvée
-  await page.goto("/app/teammates");
-  await page.fill("#tm-id", "BobGG#EUW");
-  await page.click("[data-testid=add-teammate]");
+  await page.goto("/app/friends");
+  await page.fill("#fr-id", "BobGG#EUW");
+  await page.click("[data-testid=add-friend]");
+  await expect(page.getByText("Demande envoyée")).toBeVisible();
   await expect(page.locator("[data-testid=teammate-card]")).toContainText("1 partie(s) ensemble");
   await expect(page.locator("[data-testid=teammate-card]")).toContainText("9/10");
 });

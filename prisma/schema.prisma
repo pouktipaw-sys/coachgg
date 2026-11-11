@@ -55,6 +55,8 @@ model User {
   coachThreads    CoachThread[]
   teammates       Teammate[]
   peerVotes       PeerVote[]
+  friendRequestsSent Friendship[] @relation("FriendRequester")
+  friendRequestsRecv Friendship[] @relation("FriendAddressee")
 }
 
 // ─────────────────────────── Coach conversationnel ───────────────────────────
@@ -838,4 +840,25 @@ model PeerVote {
   @@unique([matchId, voterId, targetId])
   @@index([targetId])
   @@index([voterId])
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+/** Amitié entre deux comptes CoachGG (demande envoyée via le Riot ID). Accepter = partager un résumé (rang, forme, trophées). */
+model Friendship {
+  id          String       @id @default(cuid())
+  requesterId String
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  respondedAt DateTime?
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
 }

@@ -6,7 +6,7 @@ import { Logo } from "./Logo";
 
 type Item = { href: string; label: string; icon: string; badge?: number };
 
-export function AppNav({ user, unread, invites, isAdmin }: { user: { displayName: string }; unread: number; invites: number; isAdmin: boolean }) {
+export function AppNav({ user, unread, invites, friendRequests = 0, isAdmin }: { user: { displayName: string }; unread: number; invites: number; friendRequests?: number; isAdmin: boolean }) {
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -18,7 +18,7 @@ export function AppNav({ user, unread, invites, isAdmin }: { user: { displayName
     { href: "/app/progress", label: "Progression", icon: "↗" },
     { href: "/app/goals", label: "Objectifs", icon: "◇" },
     { href: "/app/coach", label: "Coach", icon: "✦" },
-    { href: "/app/teammates", label: "Coéquipiers", icon: "☺" },
+    { href: "/app/friends", label: "Amis", icon: "☺", badge: friendRequests },
     { href: "/app/teams", label: "Groupes", icon: "◎" },
     { href: "/app/invitations", label: "Invitations", icon: "✉", badge: invites },
     { href: "/app/notifications", label: "Notifications", icon: "◔", badge: unread },

@@ -6,13 +6,14 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
-  const [unread, invites] = await Promise.all([
+  const [unread, invites, friendRequests] = await Promise.all([
     prisma.notification.count({ where: { userId: user.id, readAt: null } }),
     prisma.teamInvitation.count({ where: { inviteeId: user.id, status: "PENDING", expiresAt: { gt: new Date() } } }),
+    prisma.friendship.count({ where: { addresseeId: user.id, status: "PENDING" } }),
   ]);
   return (
     <div className="lg:flex">
-      <AppNav user={user} unread={unread} invites={invites} isAdmin={user.role === "ADMIN"} />
+      <AppNav user={user} unread={unread} invites={invites} friendRequests={friendRequests} isAdmin={user.role === "ADMIN"} />
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8">{children}</main>
     </div>
   );
