@@ -18,6 +18,7 @@ import { requestRecap } from "../recap";
 import { ensureTimelineFacts } from "../riot/import";
 import { deathFacts, myDeaths } from "@/lib/riot/timelineFacts";
 import { TIMELINE_VERSION, timelineProposal } from "@/lib/analysis/timelineProposals";
+import { alignOffset, parseRecordingDate, pickMatch } from "@/lib/analysis/autoSync";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 type Step = { name: string; status: "ok" | "skipped" | "warning" | "failed"; ms: number; note?: string };
@@ -128,6 +129,39 @@ export async function analyzeRecording(job: AnalysisJob) {
     const proposals = await step("Propositions (règles " + RULES_VERSION + ")", async () => {
       const p = buildProposals(out, { durationMs: rec.durationMs!, gameStartOffsetMs: rec.gameStartOffsetMs });
       return { value: p, note: `${p.length} proposition(s).` };
+    });
+
+    // 8 0. Liaison à la partie Riot (date du fichier) et synchronisation (alignement des morts), si absentes.
+    await step("Liaison et synchronisation automatiques", async () => {
+      const notes: string[] = [];
+      if (!rec.matchId) {
+        const recordedAt = rec.capturedAt ?? parseRecordingDate(rec.originalFilename) ?? parseRecordingDate(rec.title);
+        if (!recordedAt) return { value: null, status: "skipped", note: "Pas de date dans le nom du fichier : lie la vidéo à sa partie à la main." };
+        const candidates = await prisma.match.findMany({
+          where: { source: "RIOT_API", gameStartAt: { not: null }, participants: { some: { userId: rec.ownerId } } },
+          select: { id: true, gameStartAt: true, durationSec: true },
+          orderBy: { gameStartAt: "desc" },
+          take: 300,
+        });
+        const m = pickMatch(candidates.map((c) => ({ id: c.id, startAt: c.gameStartAt!, durationSec: c.durationSec })), recordedAt);
+        if (!m) return { value: null, status: "skipped", note: `Aucune partie Riot importée autour du ${recordedAt.toLocaleString("fr-FR")}.` };
+        await prisma.recording.update({ where: { id: rec.id }, data: { matchId: m.id } });
+        Object.assign(rec, { matchId: m.id });
+        notes.push(`Vidéo liée à la partie du ${m.startAt.toLocaleString("fr-FR")} (date du fichier).`);
+      }
+      if (rec.gameStartOffsetMs == null && rec.matchId) {
+        const me = await prisma.matchParticipant.findFirst({ where: { matchId: rec.matchId, userId: rec.ownerId }, select: { puuid: true } });
+        const ct = me?.puuid ? await ensureTimelineFacts(rec.matchId) : null;
+        const gameDeaths = ct && me?.puuid ? myDeaths(ct, me.puuid).map((d) => d.t) : [];
+        const videoDeaths = out.events.filter((e) => e.type === "grey_screen").map((e) => e.startMs);
+        const aligned = alignOffset(videoDeaths, gameDeaths);
+        if (aligned) {
+          await prisma.recording.update({ where: { id: rec.id }, data: { gameStartOffsetMs: aligned.offsetMs } });
+          Object.assign(rec, { gameStartOffsetMs: aligned.offsetMs });
+          notes.push(`Synchronisée automatiquement : ${aligned.matches} mort(s) alignée(s) avec la timeline (00:00 en jeu à ${(aligned.offsetMs / 1000).toFixed(1)} s de la vidéo).`);
+        } else notes.push(`Synchronisation automatique impossible (${videoDeaths.length} mort(s) vue(s) à l'image, ${gameDeaths.length} dans la timeline ; il en faut 2 concordantes) : utilise l'onglet « Synchro ».`);
+      }
+      return notes.length ? { value: null, note: notes.join(" ") } : { value: null, status: "skipped", note: "Déjà liée et synchronisée." };
     });
 
     // 8 a. Timeline Riot : morts réelles du joueur, faits mesurés et schéma minimap (vidéo liée et synchronisée).

@@ -84,3 +84,15 @@ Quand la vidéo est **liée à une partie importée de Riot** et **synchronisée
 - Une mort détectée à l'image (écran grisé) à moins de 5 s est fusionnée avec la mort réelle. Avec une clé Anthropic, Claude reçoit
   ces faits mesurés en plus des images et conserve le schéma minimap.
 - La timeline compacte est stockée sur le match à l'import (`Match.timelineFacts`), ou récupérée à la demande pour les anciens matchs.
+
+### Liaison et synchronisation automatiques
+
+Avant l'étape timeline, l'analyse tente de se passer de toute manipulation :
+
+1. **Liaison** (si la vidéo n'est liée à aucune partie) : la date d'enregistrement est lue dans le nom du fichier
+   (client LoL « … 2024-09-18 19-24-33 », OBS, ShadowPlay, Outplayed…) ou fournie par l'application PC ; la partie Riot
+   importée qui contient cette heure (± 10 min) est retenue. L'heure du fichier est l'heure locale du PC qui fait tourner CoachGG.
+2. **Synchronisation** (si le décalage est inconnu) : les morts vues à l'image (écrans grisés) sont alignées sur les morts
+   réelles de la timeline ; le décalage est accepté avec **au moins 2 concordances** à ± 1,5 s, puis affiné (moyenne).
+
+Sinon, l'étape l'indique et les réglages manuels (encadré « Informations », onglet « Synchro ») restent disponibles.

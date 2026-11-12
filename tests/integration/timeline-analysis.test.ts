@@ -1,6 +1,8 @@
 // Analyse précise avec la timeline Riot : vraie partie importée (serveur simulé), vidéo synchronisée.
 // La vidéo de test a un écran grisé à 13 s ; la timeline place une mort à 0:11 de jeu (offset 2 s → 13 s)
 // et une seconde à 0:20 (22 s dans la vidéo) que l'image ne détecte pas.
+import { execSync } from "node:child_process";
+import { copyFileSync, existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/server/db";
 import { RiotClient, type RiotMatch } from "@/server/riot/client";
@@ -8,7 +10,7 @@ import { importRecentMatches } from "@/server/riot/import";
 import { requestAnalysis } from "@/server/analysis/job";
 import { analyzerAvailable } from "@/server/analysis/runner";
 import { drain } from "@/worker/index";
-import { makeUser, uploadFile } from "./helpers";
+import { fixture, makeUser, uploadFile } from "./helpers";
 
 const available = (await analyzerAvailable()).ok;
 const puuids = ["ME", ...Array.from({ length: 9 }, (_, i) => `P${i + 2}`)];
@@ -80,5 +82,42 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée/);
     const clips = await prisma.clip.findMany({ where: { recordingId: id, kind: "DEATH" }, orderBy: { startMs: "asc" } });
     expect(clips.length).toBe(2); // la mort non vue à l'image a aussi son clip
+  }, 240_000);
+  it("liaison et synchronisation automatiques : date du nom de fichier + alignement de 2 morts", async () => {
+    // Vidéo de 50 s avec deux écrans grisés (13-18 s et 33-38 s) ; partie : morts à 0:11 et 0:31 → décalage 2 s.
+    if (!existsSync(fixture("two-deaths.mp4")))
+      execSync(
+        "ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 50 -vf \"hue=s=0:enable='between(t,13,18)+between(t,33,38)'\" -c:v libx264 -pix_fmt yuv420p two-deaths.mp4",
+        { cwd: fixture("") },
+      );
+    const start = new Date(1_760_000_000_000 + 60_000); // une minute après le début de la partie (heure locale)
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const name = `League of Legends (TM) Client ${start.getFullYear()}-${p2(start.getMonth() + 1)}-${p2(start.getDate())} ${p2(start.getHours())}-${p2(start.getMinutes())}-${p2(start.getSeconds())}.mp4`;
+    copyFileSync(fixture("two-deaths.mp4"), fixture(name));
+
+    const u = await makeUser("Bea");
+    await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Me", tagLine: "EUW", platform: "EUW1", puuid: "ME" } });
+    const tl2 = structuredClone(timeline);
+    (tl2.info.frames[0]!.events as { timestamp: number; type: string }[]).splice(0, 3,
+      { type: "CHAMPION_KILL", timestamp: 11_000, position: { x: 9100, y: 9600 }, killerId: 8, victimId: 1, assistingParticipantIds: [7] } as never,
+      { type: "CHAMPION_KILL", timestamp: 31_000, position: { x: 8000, y: 8000 }, killerId: 6, victimId: 1, assistingParticipantIds: [9] } as never,
+    );
+    const client = new RiotClient("k", async (url: string) => {
+      if (url.includes("/EUW1_888/timeline")) return new Response(JSON.stringify({ ...tl2, metadata: { matchId: "EUW1_888", participants: puuids } }), { status: 200 });
+      if (url.includes("/ids?")) return new Response(JSON.stringify(["EUW1_888"]), { status: 200 });
+      if (url.includes("/matches/EUW1_888")) return new Response(JSON.stringify({ ...match, metadata: { matchId: "EUW1_888" } }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    });
+    await importRecentMatches(u.id, 1, client);
+    const id = await uploadFile(u.id, name); // traitement puis analyse automatique, sans lien ni synchro manuels
+
+    const rec = await prisma.recording.findUniqueOrThrow({ where: { id } });
+    const m = await prisma.match.findFirstOrThrow({ where: { riotMatchId: "EUW1_888" } });
+    expect(rec.matchId).toBe(m.id);
+    expect(Math.abs(rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(700);
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    const note = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note;
+    expect(note).toMatch(/liée à la partie.*Synchronisée automatiquement : 2 mort/);
+    expect(await prisma.recommendation.count({ where: { recordingId: id, analysisVersion: "riot-timeline-1.0.0" } })).toBe(2);
   }, 240_000);
 });
