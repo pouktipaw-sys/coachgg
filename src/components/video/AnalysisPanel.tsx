@@ -104,6 +104,9 @@ export function AnalysisPanel({
             Repère automatiquement des séquences à revoir à partir de signaux visibles dans l&apos;image. Les propositions restent des brouillons
             jusqu&apos;à votre validation.
           </p>
+          <p className="mt-1 text-xs text-accent-2">
+            🎯 Analyse précise : lie la vidéo à sa partie importée de Riot (encadré « Informations ») et synchronise-la (onglet « Synchro ») — chaque vraie mort est alors analysée avec les faits de la partie (tueur, ennemis, alliés, balises, objectif perdu) et un schéma sur la minimap.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-muted" htmlFor="an-ctx">Contexte avant l&apos;événement</label>

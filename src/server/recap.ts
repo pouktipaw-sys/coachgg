@@ -30,8 +30,10 @@ const origin = (m: { provenance: string; status: string; analysisVersion: string
     ? null
     : m.status === "DRAFT"
       ? m.analysisVersion?.startsWith("ia")
-        ? "Analyse IA (Claude) — proposition à vérifier"
-        : "Détection automatique (règles) — à vérifier"
+        ? "Analyse IA (Claude) + faits mesurés — proposition à vérifier"
+        : m.analysisVersion?.startsWith("riot-timeline")
+          ? "Faits mesurés par la timeline Riot — diagnostic à vérifier"
+          : "Détection automatique (règles) — à vérifier"
       : "Proposition automatique validée";
 
 export async function renderRecap(job: AnalysisJob) {

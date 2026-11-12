@@ -9,6 +9,7 @@ import { PermanentJobError, enqueueJob, retryJob, setJobProgress } from "../jobs
 import { notify } from "../notifications";
 import { afterMatchSaved } from "../matches/service";
 import { env } from "@/lib/env";
+import { compactTimeline, type CompactTimeline } from "@/lib/riot/timelineFacts";
 import { RANKED_QUEUES, RiotApiError, RiotNotConfiguredError, convertRiotMatch, participantTimeline, riotClient, type RiotClient } from "./client";
 
 export type ImportStatus = "imported" | "already" | "linked";
@@ -74,6 +75,7 @@ async function importOne(userId: string, puuid: string, riotMatchId: string, cli
   if (withTimeline) {
     try {
       const tl = await client.timeline(m.riotMatchId);
+      await saveTimelineFacts(created.id, tl, m.participants);
       const parts = await prisma.matchParticipant.findMany({ where: { matchId: created.id }, select: { id: true, puuid: true } });
       for (const p of parts) {
         const series = p.puuid ? participantTimeline(tl, p.puuid) : null;
@@ -85,6 +87,29 @@ async function importOne(userId: string, puuid: string, riotMatchId: string, cli
   }
   await afterMatchSaved(created.id);
   return "imported";
+}
+
+async function saveTimelineFacts(matchId: string, tl: unknown, players: { puuid: string; teamSide: number; championName: string }[]) {
+  const ct = compactTimeline(tl as Parameters<typeof compactTimeline>[0], players.map((p) => ({ puuid: p.puuid, teamId: p.teamSide, champion: p.championName })));
+  await prisma.match.update({ where: { id: matchId }, data: { timelineFacts: ct as unknown as Prisma.InputJsonValue } });
+  return ct;
+}
+
+/**
+ * Timeline compacte d'un match importé de Riot : stockée, sinon récupérée à la demande
+ * (matchs importés avant cette fonctionnalité). null si indisponible (pas de clé, match saisi…).
+ */
+export async function ensureTimelineFacts(matchId: string, client?: RiotClient): Promise<CompactTimeline | null> {
+  const match = await prisma.match.findUnique({ where: { id: matchId }, include: { participants: { select: { puuid: true, teamSide: true, championName: true } } } });
+  if (!match?.riotMatchId) return null;
+  if (match.timelineFacts) return match.timelineFacts as unknown as CompactTimeline;
+  if (!client && !env.riotApiKey) return null;
+  try {
+    const tl = await (client ?? riotClient()).timeline(match.riotMatchId);
+    return await saveTimelineFacts(match.id, tl, match.participants.filter((p): p is typeof p & { puuid: string } => !!p.puuid));
+  } catch {
+    return null;
+  }
 }
 
 export async function importRecentMatches(userId: string, count = 5, client: RiotClient = riotClient()) {

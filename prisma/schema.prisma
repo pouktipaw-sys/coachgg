@@ -248,6 +248,8 @@ model Match {
   createdAt    DateTime    @default(now())
   // Équipes : totaux nécessaires aux ratios (participation, parts de dégâts)
   teamStats    Json? // { "100": { kills, dragons, barons, towers, ... }, "200": {...} }
+  // Timeline MATCH-V5 compacte : positions par minute, kills, objectifs, balises (analyse vidéo précise)
+  timelineFacts Json?
 
   participants MatchParticipant[]
   recordings   Recording[]

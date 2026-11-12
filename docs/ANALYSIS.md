@@ -67,3 +67,20 @@ python3 -m venv .venv-analysis && .venv-analysis/bin/pip install -r analysis/req
 ```bash
 .venv-analysis/bin/python -m unittest discover -s analysis
 ```
+
+
+## Timeline Riot (analyse précise)
+
+Quand la vidéo est **liée à une partie importée de Riot** et **synchronisée** avec l'horloge du jeu, chaque mort réelle du joueur
+(timeline MATCH-V5) devient un moment, même si l'image ne l'a pas détectée :
+
+- **Faits mesurés** : tueur et assistants, alliés à portée (moins de 2 500 unités), allié le plus proche, balises posées dans les
+  3 minutes, moitié de carte, objectif pris par l'ennemi dans la minute, échange (le tueur meurt dans les 15 s), écart d'or.
+- **Diagnostic** (`diagnoseDeath`, testé) : objectif perdu → rotation ; isolé face à 2 ennemis ou plus → placement ; dans la moitié
+  adverse sans balise → vision ; infériorité numérique → engagement ; échange → non classé comme erreur.
+- **Schéma sur la minimap** (si la zone minimap est définie) : lieu de la mort, ennemis, alliés à portée, flèche de repli vers la base.
+- **Limites** : la timeline donne les positions **une fois par minute** ; entre deux, elles sont interpolées (signalé dans le texte).
+  Le lieu de la mort, le tueur et les assistants sont exacts.
+- Une mort détectée à l'image (écran grisé) à moins de 5 s est fusionnée avec la mort réelle. Avec une clé Anthropic, Claude reçoit
+  ces faits mesurés en plus des images et conserve le schéma minimap.
+- La timeline compacte est stockée sur le match à l'import (`Match.timelineFacts`), ou récupérée à la demande pour les anciens matchs.

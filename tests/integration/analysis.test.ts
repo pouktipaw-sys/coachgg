@@ -28,6 +28,7 @@ describe.skipIf(!available)("analyse vidéo assistée (Python/OpenCV réels)", (
       "Synchronisation des horodatages",
       "Extraction des signaux et sélection des séquences",
       "Propositions (règles auto-0.1.0)",
+      "Timeline Riot (morts et positions réelles)",
       "Annotations et enregistrement pour revue",
       "Découpage automatique en clips",
       "Bilan de la partie",

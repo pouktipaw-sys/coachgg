@@ -15,6 +15,9 @@ import { buildProposals, RULES_VERSION } from "@/lib/analysis/rules";
 import { autoClipsFrom } from "@/lib/analysis/autoClips";
 import { AI_MOMENT_RESERVE_MICROS, AI_VERSION, AiAnalysisError, aiBudgetMicros, aiMaxMoments, aiSpentThisMonthMicros, aiDeps, aiEnabled, aiModel, gameReportAi, gameReportRules, proposalFromReview, reviewMoment, type GameReport } from "./ai";
 import { requestRecap } from "../recap";
+import { ensureTimelineFacts } from "../riot/import";
+import { deathFacts, myDeaths } from "@/lib/riot/timelineFacts";
+import { TIMELINE_VERSION, timelineProposal } from "@/lib/analysis/timelineProposals";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 type Step = { name: string; status: "ok" | "skipped" | "warning" | "failed"; ms: number; note?: string };
@@ -127,13 +130,45 @@ export async function analyzeRecording(job: AnalysisJob) {
       return { value: p, note: `${p.length} proposition(s).` };
     });
 
-    // 8 bis. Analyse par IA (Claude) des morts probables : observations, alternative, conseil et schéma.
+    // 8 a. Timeline Riot : morts réelles du joueur, faits mesurés et schéma minimap (vidéo liée et synchronisée).
+    const extraDeaths: { type: "grey_screen"; startMs: number; endMs: number }[] = [];
+    await step("Timeline Riot (morts et positions réelles)", async () => {
+      if (!rec.matchId) return { value: 0, status: "skipped", note: "Vidéo non liée à un match." };
+      if (rec.gameStartOffsetMs == null) return { value: 0, status: "skipped", note: "Vidéo non synchronisée avec l'horloge du jeu (onglet « Synchro »)." };
+      const me = await prisma.matchParticipant.findFirst({ where: { matchId: rec.matchId, userId: rec.ownerId }, select: { puuid: true } });
+      if (!me?.puuid) return { value: 0, status: "skipped", note: "Match saisi à la main ou joueur non identifié : pas de timeline." };
+      const ct = await ensureTimelineFacts(rec.matchId);
+      if (!ct) return { value: 0, status: "skipped", note: "Timeline indisponible (clé Riot absente ou expirée)." };
+      let added = 0;
+      let merged = 0;
+      for (const d of myDeaths(ct, me.puuid)) {
+        const deathVideoMs = d.t + rec.gameStartOffsetMs!;
+        const p = timelineProposal(deathFacts(ct, me.puuid, d), { deathVideoMs, durationMs: rec.durationMs!, contextSec, minimap: !!minimap });
+        if (!p) continue;
+        // La mort détectée à l'image (écran grisé) correspondante est remplacée par la version mesurée.
+        const twin = proposals.findIndex((x) => (x.evidence as { type?: string }).type === "grey_screen" && Math.abs(x.recommendation.decisionMs + 2000 - deathVideoMs) <= 5000);
+        if (twin >= 0) {
+          p.sheet = proposals[twin]!.sheet;
+          proposals.splice(twin, 1);
+          merged++;
+        } else extraDeaths.push({ type: "grey_screen", startMs: deathVideoMs, endMs: deathVideoMs + 5000 });
+        proposals.push(p);
+        added++;
+      }
+      proposals.sort((a, b) => a.recommendation.decisionMs - b.recommendation.decisionMs);
+      return { value: added, note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image)${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.` };
+    });
+
+    // 8 b. Analyse par IA (Claude) des morts probables : observations, alternative, conseil et schéma.
     // Coût cumulé : une relance réutilise la même tâche, la dépense précédente est conservée.
     const baseCost = job.costMicros ?? 0;
     let costMicros = 0;
     if (aiEnabled()) {
       await step("Analyse IA des moments (Claude)", async () => {
-        const deaths = proposals.map((p, i) => ({ p, i })).filter(({ p }) => (p.evidence as { type?: string }).type === "grey_screen").slice(0, aiMaxMoments());
+        const deaths = proposals
+          .map((p, i) => ({ p, i }))
+          .filter(({ p }) => ["grey_screen", "riot_death"].includes((p.evidence as { type?: string }).type ?? ""))
+          .slice(0, aiMaxMoments());
         let ok = 0;
         const errors: string[] = [];
         const budget = aiBudgetMicros();
@@ -151,8 +186,8 @@ export async function analyzeRecording(job: AnalysisJob) {
                 tmp,
                 index: i,
                 contextStartMs: p.recommendation.contextStartMs,
-                // La règle place la décision 2 s avant l'écran grisé.
-                deathMs: p.recommendation.decisionMs + 2000,
+                // Mort réelle (timeline) si connue ; sinon la règle place la décision 2 s avant l'écran grisé.
+                deathMs: (p.evidence as { deathVideoMs?: number }).deathVideoMs ?? p.recommendation.decisionMs + 2000,
                 gameStartOffsetMs: rec.gameStartOffsetMs,
                 ruleObservations: p.recommendation.observations,
               },
@@ -161,6 +196,11 @@ export async function analyzeRecording(job: AnalysisJob) {
             costMicros += r.costMicros;
             const replaced = proposalFromReview(p, r.review, r.times, r.model, rec.durationMs!);
             if (replaced) {
+              if ((p.evidence as { type?: string }).type === "riot_death") {
+                // Les faits mesurés restent en tête ; le schéma minimap (positions réelles) est conservé.
+                replaced.recommendation.observations = [...p.recommendation.observations.slice(0, 3), ...replaced.recommendation.observations].slice(0, 7);
+                replaced.annotations = [...p.annotations, ...replaced.annotations];
+              }
               proposals[i] = replaced;
               ok++;
             } else errors.push(`image illisible à ${p.recommendation.decisionMs} ms`);
@@ -216,7 +256,11 @@ export async function analyzeRecording(job: AnalysisJob) {
             confidenceReason: r.confidenceReason,
             advice: r.advice,
             provenance: "AUTOMATIC",
-            analysisVersion: (p.evidence as { ai?: { model: string } }).ai ? `${AI_VERSION} (${(p.evidence as { ai: { model: string } }).ai.model})` : RULES_VERSION,
+            analysisVersion: (p.evidence as { ai?: { model: string } }).ai
+              ? `${AI_VERSION} (${(p.evidence as { ai: { model: string } }).ai.model})`
+              : (p.evidence as { type?: string }).type === "riot_death"
+                ? TIMELINE_VERSION
+                : RULES_VERSION,
             status: "DRAFT",
             analysisJobId: job.id,
             autoEvidence: p.evidence as Prisma.InputJsonValue,
@@ -265,7 +309,7 @@ export async function analyzeRecording(job: AnalysisJob) {
       if (!choice.deaths && !choice.fights) return { value: 0, status: "skipped", note: "Désactivé dans les réglages." };
       await prisma.clip.deleteMany({ where: { recordingId: rec.id, provenance: "AUTOMATIC", favorite: false, personalNote: null, exportStatus: null } });
       const kept = await prisma.clip.findMany({ where: { recordingId: rec.id }, select: { kind: true, startMs: true, endMs: true } });
-      const wanted = autoClipsFrom(out.events, rec.durationMs!, rec.gameStartOffsetMs, { ...choice, contextSec });
+      const wanted = autoClipsFrom([...out.events, ...extraDeaths], rec.durationMs!, rec.gameStartOffsetMs, { ...choice, contextSec });
       // Un clip conservé (favori, annoté, exporté, ou manuel) qui contient déjà l'événement suffit.
       const fresh = wanted.filter((c) => !kept.some((k) => k.kind === c.kind && k.startMs <= c.eventMs && k.endMs >= c.eventMs));
       if (fresh.length)
