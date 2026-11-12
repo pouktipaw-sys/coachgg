@@ -429,7 +429,7 @@ export function CoachingStudio({
               minimap={minimap}
               width={size.w}
               height={size.h}
-              showMinimapFrame={editing}
+              showMinimapFrame={editing || panel.k === "sync"}
               pauseAnim={pausedAt && pausedMoment ? { momentId: pausedAt.momentId, elapsedMs: pauseElapsed, decisionMs: pausedMoment.decisionMs } : null}
               draft={draftPreview}
             />
@@ -650,9 +650,35 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
+/** Minimap carrée (en pixels) dans un coin, taille selon l'échelle d'interface choisie en jeu. */
+const MINIMAP_PRESETS = [
+  ["Bas droite · petite", "right", 0.2],
+  ["Bas droite · standard", "right", 0.26],
+  ["Bas droite · grande", "right", 0.34],
+  ["Bas gauche · standard", "left", 0.26],
+].map(([label, side, hFrac]) => ({
+  label: label as string,
+  region: (w: number, h: number) => {
+    const hh = hFrac as number;
+    const ww = (hh * h) / w; // carré en pixels
+    const mx = 6 / w;
+    const my = 6 / h;
+    return { x: side === "right" ? 1 - ww - mx : mx, y: 1 - hh - my, w: ww, h: hh };
+  },
+}));
+
 function SyncPanel({ recording, tMs, onSaved }: { recording: RecordingDTO; tMs: number; onSaved: (r: Partial<RecordingDTO>) => void }) {
   const [clock, setClock] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  async function saveMinimap(region: { x: number; y: number; w: number; h: number }) {
+    try {
+      const r = await api<{ recording: RecordingDTO }>(`/api/recordings/${recording.id}`, { method: "PATCH", json: { minimapRegion: region } });
+      onSaved({ minimapRegion: r.recording.minimapRegion });
+      setMsg("Zone minimap enregistrée : vérifie que le cadre bleu entoure bien la minimap sur l'image.");
+    } catch (e) {
+      setMsg(errorMessage(e));
+    }
+  }
   async function save(offset: number | null) {
     try {
       const r = await api<{ recording: RecordingDTO }>(`/api/recordings/${recording.id}`, { method: "PATCH", json: { gameStartOffsetMs: offset } });
@@ -686,9 +712,19 @@ function SyncPanel({ recording, tMs, onSaved }: { recording: RecordingDTO; tMs: 
         </p>
       )}
       {msg && <p role="status" className="text-xs">{msg}</p>}
-      <p className="text-xs text-muted">
-        Zone minimap : {recording.minimapRegion ? "définie" : "non définie"} (onglet « Annoter » → outil « Définir la zone minimap »).
-      </p>
+      <div className="space-y-1 text-xs">
+        <p className="text-muted">
+          Zone minimap : {recording.minimapRegion ? "définie" : "non définie"} — nécessaire pour le schéma des positions réelles (timeline Riot).
+          Préréglages ci-dessous (à vérifier sur l&apos;image), ou réglage précis : onglet « Annoter » → outil « Définir la zone minimap ».
+        </p>
+        <div className="flex flex-wrap gap-1" data-testid="minimap-presets">
+          {MINIMAP_PRESETS.map((p) => (
+            <button key={p.label} type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => saveMinimap(p.region(recording.width ?? 1920, recording.height ?? 1080))}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
