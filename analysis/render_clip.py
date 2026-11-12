@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import os
 import subprocess
 import sys
@@ -113,6 +114,30 @@ class Space:
         return r * self.rect(space)[2]
 
 
+class InsetSpace(Space):
+    """Minimap agrandie : l'espace MINIMAP est projeté dans l'encart (x, y, côté)."""
+
+    zoomed = True
+
+    def __init__(self, w: int, h: int, minimap, inset):
+        super().__init__(w, h, minimap)
+        self.inset = inset
+
+    def rect(self, space: str):
+        if space == "MINIMAP":
+            return self.inset
+        return super().rect(space)
+
+
+def minimap_inset(img: Image.Image, sp: Space):
+    """Découpe la minimap de l'image et l'agrandit (encart à gauche, sous le bandeau)."""
+    x, y, w, h = sp.rect("MINIMAP")
+    side = int(min(sp.h * 0.56, sp.w * 0.34))
+    ix, iy = 18, max(64, (sp.h - side) // 2 + 10)
+    crop = img.crop((int(x), int(y), int(x + w), int(y + h))).resize((side, side), Image.LANCZOS)
+    return crop, (ix, iy, side), (x, y, w, h)
+
+
 # ───────────────────────────────── dessin ─────────────────────────────────
 
 def dashed(d: ImageDraw.ImageDraw, pts, color, width, dash=14, gap=9):
@@ -127,12 +152,22 @@ def dashed(d: ImageDraw.ImageDraw, pts, color, width, dash=14, gap=9):
             n = e + gap
 
 
+PLACED: list = []  # étiquettes déjà posées sur l'image en cours (évite les chevauchements)
+
+
 def tag(d: ImageDraw.ImageDraw, xy, text, color, f, anchor="l"):
     x, y = xy
     bbox = d.textbbox((0, 0), text, font=f)
     w, h = bbox[2] - bbox[0] + 14, bbox[3] - bbox[1] + 10
     if anchor == "m":
         x -= w / 2
+    # Décale l'étiquette vers le bas tant qu'elle chevauche une étiquette déjà posée.
+    for _ in range(12):
+        box = (x, y - h / 2, x + w, y + h / 2)
+        if not any(box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in PLACED):
+            break
+        y += h + 2
+    PLACED.append((x, y - h / 2, x + w, y + h / 2))
     d.rounded_rectangle([x, y - h / 2, x + w, y + h / 2], radius=5, fill=(10, 13, 20, 225), outline=color + (255,), width=1)
     d.text((x + 7, y - h / 2 + 4), text, font=f, fill=(255, 255, 255, 255))
 
@@ -149,7 +184,7 @@ def draw_annotation(layer: Image.Image, a: dict, prog: float, alpha: float, sp: 
     style, space = a["style"], a.get("space", "FRAME")
     col = COLORS.get(style, (255, 255, 255))
     rgba = col + (int(255 * alpha),)
-    small = space == "MINIMAP"
+    small = space == "MINIMAP" and not getattr(sp, "zoomed", False)
     width = 3 if small else 5
     g = a["geometry"]
     label = a.get("label") or (
@@ -322,7 +357,8 @@ def render(spec: dict):
 
     def emit(img: Image.Image, t: float, freeze=None):
         nonlocal written
-        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        PLACED.clear()
+        active = []
         for a in anns:
             if freeze and a.get("recommendationId") == freeze["id"] and a["startMs"] <= freeze["decisionMs"] + 50 and a["endMs"] >= freeze["decisionMs"] - 50:
                 prog = min(1.0, freeze["elapsed"] / ALT_DRAW_SEC) if a["style"] == "alternative" else 1.0
@@ -332,6 +368,25 @@ def render(spec: dict):
                 if alpha <= 0:
                     continue
                 prog = draw_progress(a, t)
+            active.append((a, prog, alpha))
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        # Schéma sur la minimap : minimap agrandie en encart, schéma redessiné en grand dessus.
+        mm_active = [x for x in active if x[0].get("space") == "MINIMAP"]
+        if sp.mm and mm_active:
+            crop, (ix, iy, side), (mx, my, mw, mh) = minimap_inset(img, sp)
+            img = img.copy()
+            img.paste(crop, (ix, iy))
+            d = ImageDraw.Draw(layer)
+            d.rectangle([mx - 2, my - 2, mx + mw + 2, my + mh + 2], outline=(76, 157, 255, 230), width=2)
+            d.rounded_rectangle([ix - 3, iy - 3, ix + side + 3, iy + side + 3], radius=6, outline=(76, 157, 255, 255), width=3)
+            tag(d, (ix + 8, iy + side + 18), "Minimap agrandie", (76, 157, 255), fonts["tag"])
+            inset = InsetSpace(out_w, out_h, sp.mm, (ix, iy, side, side))
+            for a, prog, alpha in mm_active:
+                draw_annotation(layer, a, prog, alpha, inset, fonts["tag"])
+        zoomed = bool(sp.mm and mm_active)
+        for a, prog, alpha in active:
+            if zoomed and a.get("space") == "MINIMAP":
+                continue  # déjà dessinée en grand dans l'encart ; la vraie minimap est seulement encadrée
             draw_annotation(layer, a, prog, alpha, sp, fonts["tag"])
         m = next((m for m in moments if m["contextStartMs"] <= t <= m["endMs"]), None)
         if freeze:
@@ -389,6 +444,8 @@ def render_card(spec: dict):
     img = Image.new("RGB", (out_w, out_h), (11, 14, 21))
     d = ImageDraw.Draw(img)
     scale = out_w / 1280
+    if spec.get("layout") == "chapter":
+        return encode_still(chapter_card(img, d, spec, out_w, out_h, scale), spec, out_w, out_h)
     f_title, f_sub = font(int(40 * scale) or 20, True), font(int(22 * scale) or 12)
     f_label, f_body = font(int(16 * scale) or 10, True), font(int(22 * scale) or 12)
     d.rectangle([0, 0, out_w, int(6 * scale) or 3], fill=(76, 157, 255))
@@ -409,8 +466,39 @@ def render_card(spec: dict):
             for i, line in enumerate(wrap(d, item, f_body, out_w - 2 * x - 30)):
                 if y > out_h - 70 * scale:
                     break
-                d.text((x + (0 if i else 0), y), ("• " if i == 0 else "  ") + line, font=f_body, fill=(230, 233, 239))
+                numbered = re.match(r"^\d+\. ", item) is not None  # « 1. … » : pas de puce en plus
+                prefix = ("" if numbered else "• ") if i == 0 else ("    " if numbered else "   ")
+                d.text((x, y), prefix + line, font=f_body, fill=(230, 233, 239))
                 y += int(30 * scale)
+    return encode_still(img, spec, out_w, out_h)
+
+
+def chapter_card(img, d, spec, out_w, out_h, scale):
+    """Carte de chapitre : « Moment 2/5 » en grand, type coloré, titre du moment, points de progression."""
+    color = tuple(spec.get("color", (251, 191, 36)))
+    f_big, f_kind, f_title = font(int(64 * scale) or 30, True), font(int(22 * scale) or 12, True), font(int(32 * scale) or 16, True)
+    d.rectangle([0, 0, out_w, int(6 * scale) or 3], fill=color)
+    cy = int(out_h * 0.36)
+    def center(text, f, y, fill):
+        w = d.textlength(text, font=f)
+        d.text(((out_w - w) / 2, y), text, font=f, fill=fill)
+    center(spec.get("title", ""), f_big, cy - int(80 * scale), (255, 255, 255))
+    center(spec.get("subtitle", "").upper(), f_kind, cy + int(10 * scale), color)
+    y = cy + int(60 * scale)
+    for line in wrap(d, spec.get("headline", ""), f_title, out_w - int(240 * scale))[:3]:
+        center(line, f_title, y, (230, 233, 239))
+        y += int(44 * scale)
+    n, k = int(spec.get("count", 0)), int(spec.get("index", 0))
+    if n > 1:
+        r, gap = int(6 * scale) or 3, int(22 * scale) or 11
+        x0 = (out_w - (n - 1) * gap) / 2
+        for i in range(n):
+            cx, yy = x0 + i * gap, out_h - int(70 * scale)
+            d.ellipse([cx - r, yy - r, cx + r, yy + r], fill=color if i == k else (60, 68, 84))
+    return img
+
+
+def encode_still(img, spec, out_w, out_h):
     if spec.get("footer"):
         footer_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
         footer(footer_layer, spec["footer"], font(13))

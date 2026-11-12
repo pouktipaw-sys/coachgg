@@ -43,6 +43,7 @@ export async function renderRecap(job: AnalysisJob) {
   if (rec.status !== "READY" || !rec.playbackKey || !rec.width || !rec.height) throw new PermanentJobError("Vidéo non prête.");
   const av = await analyzerAvailable();
   if (!av.ok) throw new PermanentJobError(`Récap non configuré : ${av.reason}`);
+  const R = rec; // non nul (vérifié ci-dessus), utilisable dans les fonctions internes
   await prisma.recording.update({ where: { id: rec.id }, data: { recapStatus: "RUNNING", recapError: null } });
 
   const moments = await prisma.recommendation.findMany({
@@ -55,26 +56,55 @@ export async function renderRecap(job: AnalysisJob) {
   const report = rec.gameReport as GameReport | null;
   const footer = `CoachGG · récap · ${rec.title}`.slice(0, 90);
   const ai = moments.some((m) => m.analysisVersion?.startsWith("ia"));
+  const measured = moments.some((m) => m.analysisVersion?.startsWith("riot-timeline"));
+  // La partie (si la vidéo est liée) : champion, résultat, K/D/A, durée.
+  const me = rec.matchId
+    ? await prisma.matchParticipant.findFirst({ where: { matchId: rec.matchId, userId: rec.ownerId }, include: { statistics: true, match: { select: { durationSec: true, gameMode: true } } } })
+    : null;
+  const gameLine = me
+    ? `${me.championName} · ${me.win ? "Victoire" : "Défaite"}${me.statistics ? ` · K/D/A ${me.statistics.kills}/${me.statistics.deaths}/${me.statistics.assists}` : ""} · ${Math.round(me.match.durationSec / 60)} min`
+    : null;
+  const KIND_COLOR: Record<string, number[]> = { MISTAKE: [240, 82, 82], GOOD_ACTION: [49, 196, 141], DEATH: [240, 82, 82], FIGHT: [255, 138, 76], MISSED_OPPORTUNITY: [251, 191, 36] };
+  const KIND_FR: Record<string, string> = { MISTAKE: "Décision à revoir", GOOD_ACTION: "Bonne action", OBJECTIVE: "Objectif", FIGHT: "Combat", MISSED_OPPORTUNITY: "Occasion manquée", INTERESTING: "À revoir", DEATH: "Mort" };
 
   const items: object[] = [
     {
       mode: "card",
       seconds: 4,
       title: `Récap de la partie — ${rec.title}`,
-      subtitle: `${moments.length} moment(s) à revoir · ${ai ? "analysés par l'IA (Claude)" : "détection automatique et tes annotations"}`,
-      sections: [{ label: "Au programme", lines: moments.slice(0, 6).map((m) => `${formatMs(m.decisionMs)} — ${m.title}`) }],
+      subtitle: `${moments.length} moment(s) à revoir · ${ai ? "analysés par l'IA (Claude)" : measured ? "faits mesurés par la timeline Riot" : "détection automatique et tes annotations"}`,
+      sections: [
+        ...(gameLine ? [{ label: "La partie", color: [49, 196, 141], lines: [gameLine] }] : []),
+        { label: "Au programme", lines: moments.slice(0, 6).map((m, i) => `${i + 1}. ${formatMs(m.decisionMs)} — ${m.title}`) },
+      ],
       footer,
     },
-    ...moments.map((m) => {
+    ...moments.flatMap((m, i) => {
+      const chapter = {
+        mode: "card",
+        layout: "chapter",
+        seconds: 2.5,
+        title: `Moment ${i + 1}/${moments.length}`,
+        subtitle: `${KIND_FR[m.kind] ?? "À revoir"} · ${rec.gameStartOffsetMs != null && m.decisionMs - rec.gameStartOffsetMs >= 0 ? `${formatMs(m.decisionMs - rec.gameStartOffsetMs)} en jeu` : `${formatMs(m.decisionMs)} dans la vidéo`}`,
+        headline: m.title,
+        color: KIND_COLOR[m.kind] ?? [251, 191, 36],
+        index: i,
+        count: moments.length,
+        footer,
+      };
+      return [chapter, segment(m, i)];
+    }),
+  ];
+  function segment(m: (typeof moments)[number], i: number) {
       const startMs = m.contextStartMs;
-      const endMs = Math.min(m.endMs, startMs + MAX_SEGMENT_MS, rec.durationMs ?? m.endMs);
+      const endMs = Math.min(m.endMs, startMs + MAX_SEGMENT_MS, R.durationMs ?? m.endMs);
       const alt = (m.alternatives as { label: string; conditions?: string }[])[0];
       return {
-        video: storage().localPath(rec.playbackKey!),
+        video: storage().localPath(R.playbackKey!),
         startMs,
         endMs,
-        minimap: rec.minimapRegion,
-        footer,
+        minimap: R.minimapRegion,
+        footer: `CoachGG · Moment ${i + 1}/${moments.length} · ${m.title}`.slice(0, 110),
         annotations: m.annotations
           .filter((a) => a.startMs < endMs && a.endMs > startMs)
           .map((a) => ({ type: a.type, style: a.style, space: a.space, geometry: a.geometry, startMs: a.startMs, endMs: a.endMs, label: a.label, recommendationId: a.recommendationId })),
@@ -95,8 +125,7 @@ export async function renderRecap(job: AnalysisJob) {
           },
         ],
       };
-    }),
-  ];
+  }
   if (report)
     items.push({
       mode: "card",
