@@ -16,8 +16,8 @@ import { autoClipsFrom } from "@/lib/analysis/autoClips";
 import { AI_MOMENT_RESERVE_MICROS, AI_VERSION, AiAnalysisError, aiBudgetMicros, aiMaxMoments, aiSpentThisMonthMicros, aiDeps, aiEnabled, aiModel, gameReportAi, gameReportRules, proposalFromReview, reviewMoment, type GameReport } from "./ai";
 import { requestRecap } from "../recap";
 import { ensureTimelineFacts } from "../riot/import";
-import { deathFacts, myDeaths } from "@/lib/riot/timelineFacts";
-import { TIMELINE_VERSION, timelineProposal } from "@/lib/analysis/timelineProposals";
+import { absences, deathFacts, myDeaths } from "@/lib/riot/timelineFacts";
+import { TIMELINE_VERSION, absenceProposal, timelineProposal } from "@/lib/analysis/timelineProposals";
 import { alignOffset, parseRecordingDate, pickMatch } from "@/lib/analysis/autoSync";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
@@ -166,6 +166,7 @@ export async function analyzeRecording(job: AnalysisJob) {
 
     // 8 a. Timeline Riot : morts réelles du joueur, faits mesurés et schéma minimap (vidéo liée et synchronisée).
     const extraDeaths: { type: "grey_screen"; startMs: number; endMs: number }[] = [];
+    const absenceClips: { kind: "MISSED_OPPORTUNITY"; title: string; startMs: number; endMs: number; eventMs: number }[] = [];
     await step("Timeline Riot (morts et positions réelles)", async () => {
       if (!rec.matchId) return { value: 0, status: "skipped", note: "Vidéo non liée à un match." };
       if (rec.gameStartOffsetMs == null) return { value: 0, status: "skipped", note: "Vidéo non synchronisée avec l'horloge du jeu (onglet « Synchro »)." };
@@ -189,8 +190,20 @@ export async function analyzeRecording(job: AnalysisJob) {
         proposals.push(p);
         added++;
       }
+      // Mauvais moments sans mort : combat perdu ou objectif pris pendant que le joueur était loin.
+      let missed = 0;
+      for (const a of absences(ct, me.puuid)) {
+        const p = absenceProposal(a, { videoMs: a.t + rec.gameStartOffsetMs!, durationMs: rec.durationMs!, minimap: !!minimap });
+        if (!p) continue;
+        proposals.push(p);
+        absenceClips.push({ kind: "MISSED_OPPORTUNITY", title: p.recommendation.title, startMs: p.recommendation.contextStartMs, endMs: p.recommendation.endMs, eventMs: p.recommendation.decisionMs });
+        missed++;
+      }
       proposals.sort((a, b) => a.recommendation.decisionMs - b.recommendation.decisionMs);
-      return { value: added, note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image)${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.` };
+      return {
+        value: added + missed,
+        note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image) ; ${missed} moment(s) sans mort (combat perdu ou objectif raté loin de toi)${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.`,
+      };
     });
 
     // 8 b. Analyse par IA (Claude) des morts probables : observations, alternative, conseil et schéma.
@@ -224,6 +237,7 @@ export async function analyzeRecording(job: AnalysisJob) {
                 deathMs: (p.evidence as { deathVideoMs?: number }).deathVideoMs ?? p.recommendation.decisionMs + 2000,
                 gameStartOffsetMs: rec.gameStartOffsetMs,
                 ruleObservations: p.recommendation.observations,
+                minimap,
               },
               aiDeps.client(),
             );
@@ -292,7 +306,7 @@ export async function analyzeRecording(job: AnalysisJob) {
             provenance: "AUTOMATIC",
             analysisVersion: (p.evidence as { ai?: { model: string } }).ai
               ? `${AI_VERSION} (${(p.evidence as { ai: { model: string } }).ai.model})`
-              : (p.evidence as { type?: string }).type === "riot_death"
+              : ["riot_death", "riot_absence"].includes((p.evidence as { type?: string }).type ?? "")
                 ? TIMELINE_VERSION
                 : RULES_VERSION,
             status: "DRAFT",
@@ -343,7 +357,11 @@ export async function analyzeRecording(job: AnalysisJob) {
       if (!choice.deaths && !choice.fights) return { value: 0, status: "skipped", note: "Désactivé dans les réglages." };
       await prisma.clip.deleteMany({ where: { recordingId: rec.id, provenance: "AUTOMATIC", favorite: false, personalNote: null, exportStatus: null } });
       const kept = await prisma.clip.findMany({ where: { recordingId: rec.id }, select: { kind: true, startMs: true, endMs: true } });
-      const wanted = autoClipsFrom([...out.events, ...extraDeaths], rec.durationMs!, rec.gameStartOffsetMs, { ...choice, contextSec });
+      // Les moments « absent » (rotations ratées, mesurées par la timeline) sont découpés avec les morts.
+      const wanted: { kind: "DEATH" | "FIGHT" | "MISSED_OPPORTUNITY"; title: string; startMs: number; endMs: number; eventMs: number }[] = [
+        ...autoClipsFrom([...out.events, ...extraDeaths], rec.durationMs!, rec.gameStartOffsetMs, { ...choice, contextSec }),
+        ...(choice.deaths ? absenceClips : []),
+      ];
       // Un clip conservé (favori, annoté, exporté, ou manuel) qui contient déjà l'événement suffit.
       const fresh = wanted.filter((c) => !kept.some((k) => k.kind === c.kind && k.startMs <= c.eventMs && k.endMs >= c.eventMs));
       if (fresh.length)
@@ -351,7 +369,8 @@ export async function analyzeRecording(job: AnalysisJob) {
           data: fresh.map((c) => ({ recordingId: rec.id, ownerId: rec.ownerId, title: c.title, kind: c.kind, startMs: c.startMs, endMs: c.endMs, provenance: "AUTOMATIC" as const })),
         });
       const deaths = fresh.filter((c) => c.kind === "DEATH").length;
-      return { value: fresh.length, note: `${fresh.length} clip(s) créé(s) : ${deaths} mort(s), ${fresh.length - deaths} combat(s).` };
+      const missedN = fresh.filter((c) => c.kind === "MISSED_OPPORTUNITY").length;
+      return { value: fresh.length, note: `${fresh.length} clip(s) créé(s) : ${deaths} mort(s), ${missedN} rotation(s) ratée(s), ${fresh.length - deaths - missedN} combat(s).` };
     });
 
     // 12. Bilan écrit de la partie (IA si disponible, sinon construit à partir des moments).

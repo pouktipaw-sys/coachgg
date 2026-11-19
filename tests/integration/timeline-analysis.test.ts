@@ -41,6 +41,10 @@ const timeline = {
         { type: "CHAMPION_KILL", timestamp: 11_000, position: { x: 9100, y: 9600 }, killerId: 8, victimId: 1, assistingParticipantIds: [7] },
         { type: "ELITE_MONSTER_KILL", timestamp: 40_000, monsterType: "DRAGON", killerTeamId: 200, killerId: 7 },
         { type: "CHAMPION_KILL", timestamp: 20_000, position: { x: 7000, y: 7000 }, killerId: 6, victimId: 1, assistingParticipantIds: [] },
+        // Combat perdu 0–3 au dragon à 0:03 pendant que « Me » est loin, dans la jungle du haut
+        { type: "CHAMPION_KILL", timestamp: 3_000, position: { x: 9800, y: 4400 }, killerId: 6, victimId: 2, assistingParticipantIds: [] },
+        { type: "CHAMPION_KILL", timestamp: 4_000, position: { x: 9850, y: 4450 }, killerId: 7, victimId: 4, assistingParticipantIds: [] },
+        { type: "CHAMPION_KILL", timestamp: 6_000, position: { x: 9900, y: 4400 }, killerId: 9, victimId: 5, assistingParticipantIds: [] },
       ]),
       frame(60_000, []),
     ],
@@ -59,7 +63,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     });
     await importRecentMatches(u.id, 1, client);
     const m = await prisma.match.findFirstOrThrow({ where: { riotMatchId: "EUW1_777" } });
-    expect((m.timelineFacts as { kills: unknown[] }).kills).toHaveLength(2); // timeline compacte stockée
+    expect((m.timelineFacts as { kills: unknown[] }).kills).toHaveLength(5); // timeline compacte stockée
 
     const id = await uploadFile(u.id, "analysis.mp4");
     await prisma.recording.update({ where: { id }, data: { matchId: m.id, gameStartOffsetMs: 2000, minimapRegion: { x: 0.78, y: 0.66, w: 0.19, h: 0.33 } } });
@@ -68,18 +72,24 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
 
     const recs = await prisma.recommendation.findMany({ where: { recordingId: id, status: "DRAFT" }, include: { annotations: true }, orderBy: { decisionMs: "asc" } });
     expect(recs.filter((r) => r.title.startsWith("Écran grisé"))).toHaveLength(0); // remplacée par la version mesurée
-    const first = recs.find((r) => r.analysisVersion === "riot-timeline-1.0.0" && r.decisionMs < 13_000)!;
+    const first = recs.find((r) => r.analysisVersion === "riot-timeline-1.0.0" && r.kind !== "MISSED_OPPORTUNITY" && r.decisionMs < 13_000)!;
     expect(first.title).toMatch(/avant que l'ennemi prenne le dragon/);
     expect(first).toMatchObject({ kind: "MISTAKE", category: "ROTATIONS", confidence: "MEDIUM" });
     expect(first.decisionMs).toBe(10_500); // 2,5 s avant la mort à 13 s
     const mm = first.annotations.filter((a) => a.space === "MINIMAP");
     expect(mm.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:danger", "highlight:enemy", "highlight:enemy"]);
-    const second = recs.find((r) => r.analysisVersion === "riot-timeline-1.0.0" && r.decisionMs > 15_000)!;
+    const second = recs.find((r) => r.analysisVersion === "riot-timeline-1.0.0" && r.kind !== "MISSED_OPPORTUNITY" && r.decisionMs > 15_000)!;
     expect(second.decisionMs).toBe(19_500);
 
+    // Combat perdu à 0:03 (vidéo 5 s) loin du joueur : moment « rotation ratée » avec schéma minimap
+    const missed = recs.find((r) => r.kind === "MISSED_OPPORTUNITY")!;
+    expect(missed.title).toMatch(/Absent du combat perdu à 0:03 \(0–3\)/);
+    expect(missed.decisionMs).toBe(1000);
+    expect(missed.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "zone:danger"]);
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
     const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;
-    expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée/);
+    expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée.*1 moment\(s\) sans mort/);
+    expect(await prisma.clip.count({ where: { recordingId: id, kind: "MISSED_OPPORTUNITY" } })).toBe(1);
     const clips = await prisma.clip.findMany({ where: { recordingId: id, kind: "DEATH" }, orderBy: { startMs: "asc" } });
     expect(clips.length).toBe(2); // la mort non vue à l'image a aussi son clip
   }, 240_000);
@@ -98,7 +108,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const u = await makeUser("Bea");
     await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Me", tagLine: "EUW", platform: "EUW1", puuid: "ME" } });
     const tl2 = structuredClone(timeline);
-    (tl2.info.frames[0]!.events as { timestamp: number; type: string }[]).splice(0, 3,
+    (tl2.info.frames[0]!.events as { timestamp: number; type: string }[]).splice(0, Infinity,
       { type: "CHAMPION_KILL", timestamp: 11_000, position: { x: 9100, y: 9600 }, killerId: 8, victimId: 1, assistingParticipantIds: [7] } as never,
       { type: "CHAMPION_KILL", timestamp: 31_000, position: { x: 8000, y: 8000 }, killerId: 6, victimId: 1, assistingParticipantIds: [9] } as never,
     );

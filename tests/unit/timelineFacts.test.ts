@@ -72,3 +72,56 @@ describe("timeline Riot : faits mesurés et diagnostic", () => {
     expect(diagnoseDeath(g).category).toBe("VISION"); // un allié présent, 2 contre 2, mais aucune balise côté adverse
   });
 });
+
+import { absences, anchors, isDeadAt, teamFights } from "@/lib/riot/timelineFacts";
+
+describe("précision des positions et moments sans mort", () => {
+  const players10 = players;
+  /** Partie : combat perdu 1–4 à 20:00 vers le dragon ; Ahri (p3) en vie au top ; dragon pris à 20:30. */
+  function game() {
+    const frames = [19, 20, 21].map((m) => ({
+      timestamp: m * 60_000,
+      events: [] as { type: string; timestamp: number; [k: string]: unknown }[],
+      participantFrames: Object.fromEntries(puuids.map((_, i) => [String(i + 1), { position: i + 1 === 3 ? { x: 2000, y: 12500 } : { x: 9500, y: 4500 }, totalGold: 8000, level: 11 }])),
+    }));
+    const kill = (t: number, killer: number, victim: number) => ({ type: "CHAMPION_KILL", timestamp: t, position: { x: 9600 + victim * 10, y: 4500 }, killerId: killer, victimId: victim, assistingParticipantIds: [] });
+    frames[1]!.events.push(kill(20 * 60_000, 6, 1), kill(20 * 60_000 + 3000, 7, 2), kill(20 * 60_000 + 6000, 9, 4), kill(20 * 60_000 + 8000, 1, 10), kill(20 * 60_000 + 9000, 6, 5));
+    frames[1]!.events.push({ type: "ELITE_MONSTER_KILL", timestamp: 20 * 60_000 + 30_000, monsterType: "DRAGON", killerTeamId: 200, killerId: 7 });
+    return compactTimeline({ metadata: { participants: puuids }, info: { frames } }, players10);
+  }
+
+  it("les kills servent de repères ; un joueur tué est mort pendant son temps de réapparition", () => {
+    const ct = game();
+    expect(anchors(ct, 1).some((a) => a.t === 20 * 60_000 && a.exact)).toBe(true); // victime : position exacte
+    expect(isDeadAt(ct, 1, 20 * 60_000 + 5000)).toBe(true);
+    expect(isDeadAt(ct, 1, 20 * 60_000 + 60_000)).toBe(false); // niveau 11 : ~35 s
+    expect(positionAt(ct, 1, 20 * 60_000 + 10_000)).toEqual({ x: 400, y: 400 }); // à la fontaine pendant la mort
+  });
+
+  it("détecte le combat perdu loin du joueur, sans doublon avec le dragon qui suit", () => {
+    const ct = game();
+    expect(teamFights(ct, 100)).toHaveLength(1);
+    const a = absences(ct, "p3");
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ kind: "FIGHT", t: 20 * 60_000 });
+    expect(a[0]!.title).toMatch(/Absent du combat perdu à 20:00 \(1–4\)/);
+    expect(a[0]!.distance).toBeGreaterThan(8000);
+    expect(absences(ct, "p1")).toHaveLength(0); // impliqué dans le combat
+  });
+});
+
+describe("réapparition", () => {
+  it("après sa mort, le joueur repart de sa fontaine", () => {
+    const frames = [0, 1].map((m) => ({
+      timestamp: m * 60_000,
+      events: [] as { type: string; timestamp: number; [k: string]: unknown }[],
+      participantFrames: Object.fromEntries(puuids.map((_, i) => [String(i + 1), { position: { x: 9000, y: 9000 }, totalGold: 500, level: 1 }])),
+    }));
+    frames[0]!.events.push({ type: "CHAMPION_KILL", timestamp: 20_000, position: { x: 9000, y: 9000 }, killerId: 6, victimId: 1, assistingParticipantIds: [] });
+    const ct = compactTimeline({ metadata: { participants: puuids }, info: { frames } }, players);
+    expect(positionAt(ct, 1, 26_000)).toEqual({ x: 400, y: 400 }); // réapparu (6 s au niveau 1) à la fontaine bleue
+    const p = positionAt(ct, 1, 43_000)!; // à mi-chemin entre la fontaine (26 s) et la minute suivante
+    expect(p.x).toBeGreaterThan(4000);
+    expect(p.x).toBeLessThan(5500);
+  });
+});

@@ -1,7 +1,7 @@
 // Transforme une mort réelle (timeline Riot) en moment de coaching : diagnostic chiffré et
 // schéma sur la minimap (position de la mort, ennemis, alliés, direction de repli).
 import type { Proposal } from "./rules";
-import { diagnoseDeath, toMinimap, type DeathFacts } from "@/lib/riot/timelineFacts";
+import { diagnoseDeath, toMinimap, type Absence, type DeathFacts } from "@/lib/riot/timelineFacts";
 
 export const TIMELINE_VERSION = "riot-timeline-1.0.0";
 
@@ -42,6 +42,49 @@ export function timelineProposal(f: DeathFacts, opts: { deathVideoMs: number; du
     },
     annotations,
     evidence: { type: "riot_death", deathVideoMs: death, facts: { ...f, enemies: f.enemies.map((e) => e.champion) } },
+    sheet: null,
+  };
+}
+
+/** Moment « absent » (combat perdu ou objectif pris loin de toi) → proposition avec schéma minimap. */
+export function absenceProposal(a: Absence, opts: { videoMs: number; durationMs: number; minimap: boolean }): Proposal | null {
+  const v = opts.videoMs;
+  if (v < 5000 || v > opts.durationMs) return null;
+  const decisionMs = Math.max(1000, v - 8000); // le moment où il fallait se mettre en route
+  const contextStartMs = Math.max(0, decisionMs - 10_000);
+  const slowdownStartMs = Math.max(contextStartMs, decisionMs - 2000);
+  const endMs = Math.min(opts.durationMs, v + 6000);
+  const win = { startMs: Math.max(0, decisionMs - 1500), endMs: Math.min(opts.durationMs, v + 4000) };
+  const annotations: Proposal["annotations"] = opts.minimap
+    ? [
+        { type: "highlight", style: "ally", space: "MINIMAP", ...win, geometry: { at: toMinimap(a.myPos), r: 0.05 }, label: "Toi" },
+        { type: "zone", style: "danger", space: "MINIMAP", ...win, geometry: { center: toMinimap(a.where), r: 0.08 }, label: a.kind === "FIGHT" ? "Combat perdu" : "Objectif" },
+        { type: "arrow", style: "alternative", space: "MINIMAP", startMs: decisionMs, endMs: win.endMs, geometry: { from: toMinimap(a.myPos), to: toMinimap(a.where) }, label: "Rejoindre" },
+      ]
+    : [];
+  return {
+    recommendation: {
+      kind: "MISSED_OPPORTUNITY",
+      category: "ROTATIONS",
+      title: a.title.slice(0, 110),
+      contextStartMs,
+      slowdownStartMs,
+      decisionMs,
+      endMs,
+      slowdownRate: 0.5,
+      observations: a.observations,
+      interpretation:
+        a.kind === "FIGHT"
+          ? "Ton équipe s'est battue sans toi et a perdu nettement : ta présence aurait pu changer le rapport de force. À vérifier : tu faisais peut-être quelque chose d'utile ailleurs (tour, vague importante)."
+          : "L'objectif a été pris pendant que tu étais loin. À vérifier : ton équipe a peut-être choisi de le céder.",
+      alternatives: [{ label: a.kind === "FIGHT" ? "Rejoindre ton équipe avant le combat" : "Te rapprocher de l'objectif une minute avant", conditions: "si ta vague est poussée et que rien d'important ne te retient ailleurs", limits: "position estimée à partir de la timeline" }],
+      confidence: a.estimated ? "LOW" : "MEDIUM",
+      confidenceReason: `Combat et objectif mesurés par la timeline Riot ; ta position est estimée${a.estimated ? " loin d'un repère (plus de 30 s)" : ""}.`,
+      advice: a.advice,
+      clipId: null,
+    },
+    annotations,
+    evidence: { type: "riot_absence", eventVideoMs: v, absence: { kind: a.kind, distance: a.distance, estimated: a.estimated } },
     sheet: null,
   };
 }

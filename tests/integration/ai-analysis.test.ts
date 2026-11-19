@@ -146,3 +146,26 @@ describe.skipIf(!available)("analyse IA (faux client Claude)", () => {
     expect((await prisma.analysisJob.findUniqueOrThrow({ where: { id: job.id } })).costMicros).toBe(first * 2);
   }, 240_000);
 });
+
+describe.skipIf(!available)("IA : minimap agrandie", () => {
+  it("avec la zone minimap connue, Claude reçoit aussi la minimap agrandie (7e image)", async () => {
+    const { reviewMoment } = await import("@/server/analysis/ai");
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { fixture } = await import("./helpers");
+    const calls: Req[] = [];
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "ai-mm-"));
+    try {
+      await reviewMoment(
+        { video: fixture("analysis.mp4"), tmp, index: 0, contextStartMs: 3000, deathMs: 13_000, gameStartOffsetMs: null, ruleObservations: ["test"], minimap: { x: 0.78, y: 0.66, w: 0.19, h: 0.33 } },
+        fakeClaude(calls),
+      );
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+    const blocks = calls[0]!.messages[0]!.content as { type: string; text?: string }[];
+    expect(blocks.filter((b) => b.type === "image")).toHaveLength(7);
+    expect(blocks.some((b) => b.text?.startsWith("Minimap agrandie"))).toBe(true);
+  });
+});

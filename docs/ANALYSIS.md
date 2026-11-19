@@ -96,3 +96,25 @@ Avant l'étape timeline, l'analyse tente de se passer de toute manipulation :
    réelles de la timeline ; le décalage est accepté avec **au moins 2 concordances** à ± 1,5 s, puis affiné (moyenne).
 
 Sinon, l'étape l'indique et les réglages manuels (encadré « Informations », onglet « Synchro ») restent disponibles.
+
+### Précision des positions (v2)
+
+- **Repères** : en plus des positions minute par minute, chaque kill sert de repère (victime : position exacte ;
+  tueur et assistants : près du lieu du kill), et chaque **réapparition** replace le joueur à sa fontaine.
+- **En vie ou mort** : temps de mort estimé selon le niveau (barème par niveau, allongé après 15 min) ; un joueur
+  mort n'est jamais compté comme « allié à portée » ni comme « absent ».
+- Chaque position indique sa fiabilité (écart au repère le plus proche) ; au-delà de 30 s, la confiance baisse.
+
+### Mauvais moments sans mort
+
+- **Absent d'un combat perdu** : combat = 3 kills ou plus à moins de 15 s et 3 500 unités les uns des autres ; perdu
+  d'au moins 2 morts d'écart ; joueur en vie, non impliqué, à plus de 5 000 unités.
+- **Objectif pris loin de toi** : dragon, Nashor, Héraut ou larves pris par l'ennemi alors que le joueur, en vie, était
+  à plus de 6 000 unités de la fosse (sans doublon avec un combat perdu dans les 30 s).
+- Chaque moment : schéma minimap (ta position, le combat ou l'objectif, flèche « Rejoindre »), conseil, clip
+  « Occasion manquée ». L'interprétation rappelle qu'il faut vérifier (tu faisais peut-être autre chose d'utile).
+
+### IA : minimap agrandie
+
+Quand la zone minimap est connue, Claude reçoit en plus une image 512 × 512 de la minimap 2,5 s avant la mort, avec la
+consigne de compter ennemis et alliés ; les faits mesurés de la timeline font foi.

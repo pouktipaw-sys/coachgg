@@ -78,6 +78,7 @@ Règles :
 - Une mort n'est pas forcément une erreur (échange favorable, objectif, sacrifice utile). Utilise « MISTAKE » seulement si une décision évitable est clairement visible.
 - Confiance « MEDIUM » au maximum, « LOW » dès que l'image est ambiguë.
 - Coordonnées normalisées sur l'image de décision : (0,0) en haut à gauche, (1,1) en bas à droite. Le champion du joueur est en général au centre de l'écran.
+- Si une minimap agrandie est fournie, sers-t'en pour compter les ennemis (icônes rouges) et alliés (bleues) proches, et dis-le dans les observations. Les faits mesurés (timeline Riot) fournis dans le texte font foi : ne les contredis pas.
 - « clicks » montre le geste à la souris : où le joueur aurait dû faire ses clics droits pour suivre l'alternative (ex. un clic loin derrière, vers la tourelle).
 - L'alternative et le conseil doivent être concrets et actionnables (se replacer, attendre la vague, utiliser la minimap, garder un sort de fuite…), en français, au tutoiement, phrases courtes.
 - Si les images ne montrent pas clairement une partie (menu, chargement, image illisible) : readable = false et listes de dessin vides.`;
@@ -89,9 +90,15 @@ export class AiAnalysisError extends Error {
 }
 
 /** Extrait une image JPEG (largeur 768) à un instant donné. */
-function grabFrame(ffmpeg: string, video: string, ms: number, out: string) {
+type Region = { x: number; y: number; w: number; h: number };
+
+/** Extrait une image (768 px de large) ; avec `crop`, la minimap seule, agrandie en 512 × 512. */
+function grabFrame(ffmpeg: string, video: string, ms: number, out: string, crop?: Region) {
+  const vf = crop
+    ? `crop=iw*${crop.w.toFixed(4)}:ih*${crop.h.toFixed(4)}:iw*${crop.x.toFixed(4)}:ih*${crop.y.toFixed(4)},scale=512:512:flags=lanczos`
+    : "scale=768:-2";
   return new Promise<void>((resolve, reject) => {
-    const p = spawn(ffmpeg, ["-v", "error", "-nostdin", "-y", "-ss", (ms / 1000).toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=768:-2", "-q:v", "4", out], { stdio: "ignore" });
+    const p = spawn(ffmpeg, ["-v", "error", "-nostdin", "-y", "-ss", (ms / 1000).toFixed(3), "-i", video, "-frames:v", "1", "-vf", vf, "-q:v", "3", out], { stdio: "ignore" });
     p.on("error", reject);
     p.on("close", (c) => (c === 0 ? resolve() : reject(new Error(`ffmpeg ${c}`))));
   });
@@ -105,17 +112,30 @@ export function sampleTimes(contextStartMs: number, deathMs: number, n = FRAMES)
 }
 
 export async function reviewMoment(
-  args: { video: string; tmp: string; index: number; contextStartMs: number; deathMs: number; gameStartOffsetMs: number | null; ruleObservations: string[] },
+  args: { video: string; tmp: string; index: number; contextStartMs: number; deathMs: number; gameStartOffsetMs: number | null; ruleObservations: string[]; minimap?: Region | null },
   client: AiClient = new Anthropic(),
 ) {
   const times = sampleTimes(args.contextStartMs, args.deathMs);
   const images: Buffer[] = [];
+  const ffmpeg = process.env.FFMPEG_BIN || "ffmpeg";
   for (const [i, t] of times.entries()) {
     const f = path.join(args.tmp, `ai-${args.index}-${i}.jpg`);
-    await grabFrame(process.env.FFMPEG_BIN || "ffmpeg", args.video, t, f);
+    await grabFrame(ffmpeg, args.video, t, f);
     images.push(await readFile(f));
   }
-  const content = momentContent(images, times, args);
+  // Minimap agrandie au moment de la décision : les icônes y sont lisibles (elles ne le sont pas à 768 px).
+  let minimapImage: { data: Buffer; atMs: number } | null = null;
+  if (args.minimap) {
+    const atMs = Math.max(0, args.deathMs - 2500);
+    const f = path.join(args.tmp, `ai-${args.index}-minimap.jpg`);
+    try {
+      await grabFrame(ffmpeg, args.video, atMs, f, args.minimap);
+      minimapImage = { data: await readFile(f), atMs };
+    } catch {
+      /* minimap facultative */
+    }
+  }
+  const content = momentContent(images, times, { ...args, minimapImage });
 
   let response;
   try {
@@ -141,7 +161,11 @@ export async function reviewMoment(
 }
 
 /** Contenu envoyé à Claude pour un moment (images horodatées + mesures) — partagé avec le test gratuit. */
-export function momentContent(images: Buffer[], times: number[], args: { deathMs: number; gameStartOffsetMs: number | null; ruleObservations: string[] }) {
+export function momentContent(
+  images: Buffer[],
+  times: number[],
+  args: { deathMs: number; gameStartOffsetMs: number | null; ruleObservations: string[]; minimapImage?: { data: Buffer; atMs: number } | null },
+) {
   const at = (ms: number) => {
     const g = gameTimeMs(ms, args.gameStartOffsetMs);
     return g != null && g >= 0 ? `${formatMs(ms)} (jeu ${formatMs(g)})` : formatMs(ms);
@@ -151,6 +175,10 @@ export function momentContent(images: Buffer[], times: number[], args: { deathMs
     content.push({ type: "text", text: `Image ${i + 1} — ${at(times[i]!)}` });
     content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img.toString("base64") } });
   });
+  if (args.minimapImage) {
+    content.push({ type: "text", text: `Minimap agrandie — ${at(args.minimapImage.atMs)} (2,5 s avant la mort) : icônes rouges = ennemis, bleues = alliés.` });
+    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: args.minimapImage.data.toString("base64") } });
+  }
   content.push({
     type: "text",
     text: `Écran grisé (mort probable) détecté à ${at(args.deathMs)}.\nMesures automatiques : ${args.ruleObservations.join(" ")}\nAnalyse ce qui a mené à la mort et propose le schéma et le conseil.`,
