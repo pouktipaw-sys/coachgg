@@ -401,6 +401,8 @@ def render(spec: dict):
             active.append((a, prog, alpha))
         layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
         # Schéma sur la minimap : minimap agrandie en encart, schéma redessiné en grand dessus.
+        # Trajets reconstitués d'abord : repères et étiquettes restent lisibles par-dessus.
+        active.sort(key=lambda x: 0 if (x[0]["type"] == "path" and "times" in x[0]["geometry"]) else 1)
         mm_active = [x for x in active if x[0].get("space") == "MINIMAP"]
         if sp.mm and mm_active:
             crop, (ix, iy, side), (mx, my, mw, mh) = minimap_inset(img, sp)
