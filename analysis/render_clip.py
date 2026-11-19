@@ -410,6 +410,18 @@ def render(spec: dict):
             d.rectangle([mx - 2, my - 2, mx + mw + 2, my + mh + 2], outline=(76, 157, 255, 230), width=2)
             d.rounded_rectangle([ix - 3, iy - 3, ix + side + 3, iy + side + 3], radius=6, outline=(76, 157, 255, 255), width=3)
             tag(d, (ix + 8, iy + side + 18), "Minimap agrandie", (76, 157, 255), fonts["tag"])
+            # Légende des trajets reconstitués (seulement s'il y en a)
+            styles = {x[0]["style"] for x in mm_active if x[0]["type"] == "path" and "times" in x[0]["geometry"]}
+            if styles:
+                lx, ly = ix + 4, iy + side + 44
+                d.rounded_rectangle([ix - 3, ly - 14, ix + side + 3, ly + 30], radius=6, fill=(10, 13, 20, 225))
+                for st, name, colr in (("actual", "Toi", (251, 191, 36)), ("enemy", "Ennemis", COLORS["enemy"]), ("ally", "Alliés", COLORS["ally"])):
+                    if st not in styles:
+                        continue
+                    d.ellipse([lx, ly - 6, lx + 12, ly + 6], fill=colr + (255,))
+                    d.text((lx + 17, ly - 9), name, font=fonts["small"], fill=(230, 233, 239, 255))
+                    lx += 30 + int(d.textlength(name, font=fonts["small"]))
+                d.text((ix + 4, ly + 12), "Trajets estimés d'après la timeline Riot", font=fonts["small"], fill=(139, 149, 168, 255))
             inset = InsetSpace(out_w, out_h, sp.mm, (ix, iy, side, side))
             for a, prog, alpha in mm_active:
                 draw_annotation(layer, a, prog, alpha, inset, fonts["tag"])
