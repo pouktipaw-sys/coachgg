@@ -13,6 +13,7 @@ import {
   projectRadius,
   subRect,
   type Rect,
+  timedProgress,
 } from "@/lib/annotations/geometry";
 import type { AnnotationDTO } from "./types";
 
@@ -69,6 +70,9 @@ export function AnnotationOverlay({ annotations, tMs, frame, minimap, width, hei
           if (opacity <= 0) return null;
           progress = drawProgress(a, tMs);
         }
+        // Trajet horodaté (reconstitution d'après la timeline) : dessiné au rythme de la vidéo.
+        const times = a.type === "path" ? (a.geometry as { times?: number[] }).times : undefined;
+        if (a.type === "path" && times) progress = timedProgress(a.geometry.points, times, inPause ? pauseAnim!.decisionMs : tMs);
         return (
           <g key={a.id} opacity={opacity} filter="url(#shadow)" data-annotation-id={a.id} data-annotation-type={a.type}>
             <Shape a={a} progress={progress} frame={frame} minimap={minimap} />
@@ -95,7 +99,9 @@ function Tag({ x, y, text, color, anchor = "start" }: { x: number; y: number; te
 
 export function Shape({ a, progress, frame, minimap }: { a: AnnotationDTO; progress: number; frame: Rect; minimap: Rect | null }) {
   const meta = STYLE_META[a.style];
-  const color = meta.color;
+  // Reconstitution (trajet horodaté) : « toi » en doré, distinct des ennemis (rouge).
+  const timed = a.type === "path" && !!(a.geometry as { times?: number[] }).times;
+  const color = timed && a.style === "actual" ? "#fbbf24" : meta.color;
   const P = (p: { x: number; y: number }) => projectPoint(p, a.space, frame, minimap);
   const R = (r: number) => projectRadius(r, a.space, frame, minimap);
   const small = a.space === "MINIMAP";

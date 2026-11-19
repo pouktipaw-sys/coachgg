@@ -77,7 +77,14 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect(first).toMatchObject({ kind: "MISTAKE", category: "ROTATIONS", confidence: "MEDIUM" });
     expect(first.decisionMs).toBe(10_500); // 2,5 s avant la mort à 13 s
     const mm = first.annotations.filter((a) => a.space === "MINIMAP");
-    expect(mm.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:danger", "highlight:enemy", "highlight:enemy"]);
+    const marks = mm.filter((a) => a.type !== "path");
+    expect(marks.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:danger", "highlight:enemy", "highlight:enemy"]);
+    // Reconstitution : trajets horodatés (toi + ennemis impliqués), au rythme de la vidéo, jusqu'à la mort
+    const paths = mm.filter((a) => a.type === "path");
+    expect(paths.map((a) => a.style).sort()).toEqual(["actual", "enemy", "enemy"]);
+    const mine = paths.find((a) => a.style === "actual")!.geometry as { points: unknown[]; times: number[] };
+    expect(mine.times.length).toBe(mine.points.length);
+    expect(mine.times.at(-1)).toBeLessThanOrEqual(13_000);
     const second = recs.find((r) => r.analysisVersion === "riot-timeline-1.0.0" && r.kind !== "MISSED_OPPORTUNITY" && r.decisionMs > 15_000)!;
     expect(second.decisionMs).toBe(19_500);
 
@@ -85,7 +92,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const missed = recs.find((r) => r.kind === "MISSED_OPPORTUNITY")!;
     expect(missed.title).toMatch(/Absent du combat perdu à 0:03 \(0–3\)/);
     expect(missed.decisionMs).toBe(1000);
-    expect(missed.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "zone:danger"]);
+    expect(missed.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "path:actual", "zone:danger"]);
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
     const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;
     expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée.*1 moment\(s\) sans mort/);

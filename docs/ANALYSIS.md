@@ -118,3 +118,11 @@ Sinon, l'étape l'indique et les réglages manuels (encadré « Informations »,
 
 Quand la zone minimap est connue, Claude reçoit en plus une image 512 × 512 de la minimap 2,5 s avant la mort, avec la
 consigne de compter ennemis et alliés ; les faits mesurés de la timeline font foi.
+
+### Reconstitution tactique sur la minimap
+
+Pour chaque mort (et chaque moment « absent »), les trajets estimés des joueurs concernés sont dessinés sur la minimap
+**au rythme de la vidéo** : toi (doré), les ennemis impliqués (rouge), les alliés à portée (bleu), sur les 15 s qui
+précèdent. Ce sont des annotations « trajet horodaté » (`geometry.times`, un point par seconde, positions interpolées
+entre les repères de la timeline) ; le lecteur web et l'export vidéo utilisent le même calcul (`timedProgress`).
+Dans le récap et les exports, elles apparaissent dans la minimap agrandie.

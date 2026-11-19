@@ -155,3 +155,17 @@ describe("parcours pédagogique", () => {
     expect(gameTimeMs(80_000, null)).toBeNull();
   });
 });
+
+import { timedProgress } from "@/lib/annotations/geometry";
+
+describe("trajet horodaté (reconstitution)", () => {
+  const pts = [{ x: 0, y: 0 }, { x: 0.3, y: 0 }, { x: 0.3, y: 0.1 }];
+  const times = [1000, 4000, 5000];
+  it("avance au rythme de la vidéo, segment par segment", () => {
+    expect(timedProgress(pts, times, 500)).toBe(0);
+    expect(timedProgress(pts, times, 2500)).toBeCloseTo(0.15 / 0.4);
+    expect(timedProgress(pts, times, 4500)).toBeCloseTo(0.35 / 0.4);
+    expect(timedProgress(pts, times, 9000)).toBe(1);
+    expect(timedProgress(pts, [1, 2], 1)).toBe(1); // instants incohérents : tracé complet
+  });
+});

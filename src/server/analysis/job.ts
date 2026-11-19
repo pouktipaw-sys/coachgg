@@ -16,7 +16,7 @@ import { autoClipsFrom } from "@/lib/analysis/autoClips";
 import { AI_MOMENT_RESERVE_MICROS, AI_VERSION, AiAnalysisError, aiBudgetMicros, aiMaxMoments, aiSpentThisMonthMicros, aiDeps, aiEnabled, aiModel, gameReportAi, gameReportRules, proposalFromReview, reviewMoment, type GameReport } from "./ai";
 import { requestRecap } from "../recap";
 import { ensureTimelineFacts } from "../riot/import";
-import { absences, deathFacts, myDeaths } from "@/lib/riot/timelineFacts";
+import { absences, deathFacts, deathTrailPlayers, myDeaths, trails } from "@/lib/riot/timelineFacts";
 import { TIMELINE_VERSION, absenceProposal, timelineProposal } from "@/lib/analysis/timelineProposals";
 import { alignOffset, parseRecordingDate, pickMatch } from "@/lib/analysis/autoSync";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
@@ -178,7 +178,10 @@ export async function analyzeRecording(job: AnalysisJob) {
       let merged = 0;
       for (const d of myDeaths(ct, me.puuid)) {
         const deathVideoMs = d.t + rec.gameStartOffsetMs!;
-        const p = timelineProposal(deathFacts(ct, me.puuid, d), { deathVideoMs, durationMs: rec.durationMs!, contextSec, minimap: !!minimap });
+        const facts = deathFacts(ct, me.puuid, d);
+        // Reconstitution : trajets estimés des 15 s avant la mort (toi, ennemis impliqués, alliés à portée).
+        const trailList = minimap ? trails(ct, deathTrailPlayers(ct, me.puuid, d, facts), d.t - Math.min(15_000, contextSec * 1000), d.t, rec.gameStartOffsetMs!) : [];
+        const p = timelineProposal(facts, { deathVideoMs, durationMs: rec.durationMs!, contextSec, minimap: !!minimap, trails: trailList });
         if (!p) continue;
         // La mort détectée à l'image (écran grisé) correspondante est remplacée par la version mesurée.
         const twin = proposals.findIndex((x) => (x.evidence as { type?: string }).type === "grey_screen" && Math.abs(x.recommendation.decisionMs + 2000 - deathVideoMs) <= 5000);
@@ -193,7 +196,9 @@ export async function analyzeRecording(job: AnalysisJob) {
       // Mauvais moments sans mort : combat perdu ou objectif pris pendant que le joueur était loin.
       let missed = 0;
       for (const a of absences(ct, me.puuid)) {
-        const p = absenceProposal(a, { videoMs: a.t + rec.gameStartOffsetMs!, durationMs: rec.durationMs!, minimap: !!minimap });
+        const mePid = ct.participants.find((x) => x.puuid === me.puuid)!.pid;
+        const trailList = minimap ? trails(ct, [{ pid: mePid, style: "actual", label: "Toi (trajet estimé)" }], a.t - 12_000, a.t, rec.gameStartOffsetMs!) : [];
+        const p = absenceProposal(a, { videoMs: a.t + rec.gameStartOffsetMs!, durationMs: rec.durationMs!, minimap: !!minimap, trails: trailList });
         if (!p) continue;
         proposals.push(p);
         absenceClips.push({ kind: "MISSED_OPPORTUNITY", title: p.recommendation.title, startMs: p.recommendation.contextStartMs, endMs: p.recommendation.endMs, eventMs: p.recommendation.decisionMs });

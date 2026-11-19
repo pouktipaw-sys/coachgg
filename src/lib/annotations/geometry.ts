@@ -95,3 +95,26 @@ export function pointAlong(pts: { x: number; y: number }[], f: number): { x: num
   }
   return pts[pts.length - 1]!;
 }
+
+/**
+ * Trajet horodaté (reconstitution d'après la timeline) : fraction de la longueur parcourue à l'instant t,
+ * chaque point ayant son propre instant. 0 avant le premier point, 1 après le dernier.
+ */
+export function timedProgress(points: { x: number; y: number }[], times: number[], t: number): number {
+  if (points.length < 2 || times.length !== points.length) return 1;
+  if (t <= times[0]!) return 0;
+  if (t >= times.at(-1)!) return 1;
+  const seg: number[] = [];
+  for (let i = 1; i < points.length; i++) seg.push(Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y));
+  const total = seg.reduce((a, b) => a + b, 0);
+  if (total === 0) return 1;
+  let done = 0;
+  for (let i = 1; i < points.length; i++) {
+    if (t <= times[i]!) {
+      const k = (t - times[i - 1]!) / Math.max(1, times[i]! - times[i - 1]!);
+      return (done + seg[i - 1]! * k) / total;
+    }
+    done += seg[i - 1]!;
+  }
+  return 1;
+}

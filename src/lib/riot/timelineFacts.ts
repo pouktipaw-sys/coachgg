@@ -371,3 +371,42 @@ export function absences(ct: CompactTimeline, puuid: string): Absence[] {
   }
   return out.sort((a, b) => a.t - b.t);
 }
+
+export type Trail = { style: "actual" | "enemy" | "ally"; label: string; points: Pos[]; times: number[] };
+
+/**
+ * Trajets estimés (positions interpolées, une par seconde) des joueurs d'un moment, en coordonnées
+ * minimap et en temps vidéo (temps de jeu + décalage). Points identiques consécutifs fusionnés.
+ */
+export function trails(ct: CompactTimeline, list: { pid: number; style: Trail["style"]; label: string }[], fromGameMs: number, toGameMs: number, offsetMs: number): Trail[] {
+  const out: Trail[] = [];
+  const from = Math.max(0, fromGameMs);
+  for (const p of list) {
+    const points: Pos[] = [];
+    const times: number[] = [];
+    for (let t = from; t <= toGameMs; t += 1000) {
+      if (isDeadAt(ct, p.pid, t) && t > from) break; // trajet arrêté à la mort
+      const pos = positionAt(ct, p.pid, t);
+      if (!pos) continue;
+      const m = toMinimap(pos);
+      const last = points.at(-1);
+      if (last && Math.abs(last.x - m.x) < 0.002 && Math.abs(last.y - m.y) < 0.002) continue;
+      points.push({ x: Math.round(m.x * 1000) / 1000, y: Math.round(m.y * 1000) / 1000 });
+      times.push(t + offsetMs);
+    }
+    if (points.length >= 2) out.push({ style: p.style, label: p.label, points: points.slice(0, 60), times: times.slice(0, 60) });
+  }
+  return out;
+}
+
+/** Joueurs à suivre pour une mort : toi, les ennemis impliqués, les alliés à portée. */
+export function deathTrailPlayers(ct: CompactTimeline, puuid: string, death: CompactTimeline["kills"][number], facts: DeathFacts) {
+  const me = ct.participants.find((p) => p.puuid === puuid)!;
+  const byChamp = (c: string) => ct.participants.find((p) => p.champion === c);
+  const enemies = [death.killer, ...death.assists].filter((pid) => pid > 0 && ct.participants.find((x) => x.pid === pid)?.teamId !== me.teamId);
+  return [
+    { pid: me.pid, style: "actual" as const, label: "Toi (trajet estimé)" },
+    ...enemies.map((pid) => ({ pid, style: "enemy" as const, label: ct.participants.find((x) => x.pid === pid)!.champion })),
+    ...facts.alliesNear.map((a) => byChamp(a.champion)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ pid: x.pid, style: "ally" as const, label: x.champion })),
+  ];
+}

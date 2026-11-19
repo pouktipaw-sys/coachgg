@@ -70,6 +70,26 @@ def draw_progress(a: dict, t: float, draw_ms: float = 1500) -> float:
     return min(1.0, (t - a["startMs"]) / d)
 
 
+def timed_progress(g: dict, t: float) -> float:
+    """Trajet horodaté (reconstitution d'après la timeline) : fraction parcourue à l'instant t."""
+    pts, times = g.get("points", []), g.get("times", [])
+    if len(pts) < 2 or len(times) != len(pts):
+        return 1.0
+    if t <= times[0]:
+        return 0.0
+    if t >= times[-1]:
+        return 1.0
+    seg = [math.dist((pts[i]["x"], pts[i]["y"]), (pts[i - 1]["x"], pts[i - 1]["y"])) for i in range(1, len(pts))]
+    total = sum(seg) or 1.0
+    done = 0.0
+    for i in range(1, len(pts)):
+        if t <= times[i]:
+            k = (t - times[i - 1]) / max(1, times[i] - times[i - 1])
+            return (done + seg[i - 1] * k) / total
+        done += seg[i - 1]
+    return 1.0
+
+
 def fade(a: dict, t: float, fade_ms: float = 300) -> float:
     if t < a["startMs"] or t > a["endMs"]:
         return 0.0
@@ -183,6 +203,8 @@ def draw_annotation(layer: Image.Image, a: dict, prog: float, alpha: float, sp: 
     d = ImageDraw.Draw(layer)
     style, space = a["style"], a.get("space", "FRAME")
     col = COLORS.get(style, (255, 255, 255))
+    if a["type"] == "path" and "times" in a["geometry"] and style == "actual":
+        col = (251, 191, 36)  # reconstitution : « toi » en doré, distinct des ennemis (rouge)
     rgba = col + (int(255 * alpha),)
     small = space == "MINIMAP" and not getattr(sp, "zoomed", False)
     width = 3 if small else 5
@@ -200,6 +222,12 @@ def draw_annotation(layer: Image.Image, a: dict, prog: float, alpha: float, sp: 
             else:
                 d.line(drawn, fill=rgba, width=width, joint="curve")
         s = 6 if small else 9
+        if "times" in g:  # reconstitution : joueur = point plein, nom qui suit la tête du trajet
+            if prog > 0:
+                d.ellipse([head[0] - s, head[1] - s, head[0] + s, head[1] + s], fill=rgba, outline=(10, 13, 20, int(255 * alpha)), width=2)
+                if not small and label:
+                    tag(d, (head[0] + 12, head[1] - 12), label, col, f)
+            return
         d.ellipse([head[0] - s, head[1] - s, head[0] + s, head[1] + s], fill=(10, 13, 20, int(255 * alpha)), outline=rgba, width=2)
         if style == "actual":  # croix = trajet réel
             d.line([head[0] - s / 2, head[1] - s / 2, head[0] + s / 2, head[1] + s / 2], fill=rgba, width=2)
@@ -368,6 +396,8 @@ def render(spec: dict):
                 if alpha <= 0:
                     continue
                 prog = draw_progress(a, t)
+            if a["type"] == "path" and "times" in a["geometry"]:
+                prog = timed_progress(a["geometry"], freeze["decisionMs"] if freeze else t)
             active.append((a, prog, alpha))
         layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
         # Schéma sur la minimap : minimap agrandie en encart, schéma redessiné en grand dessus.
