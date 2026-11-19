@@ -25,7 +25,8 @@ export function timelineProposal(f: DeathFacts, opts: { deathVideoMs: number; du
   if (death < 3000 || death > opts.durationMs) return null;
   const dx = diagnoseDeath(f);
   const contextStartMs = Math.max(0, death - opts.contextSec * 1000);
-  const decisionMs = Math.max(contextStartMs + 500, death - 2500);
+  // Instant de décision mesuré (arrivée du premier ennemi à portée), converti en temps vidéo.
+  const decisionMs = Math.max(contextStartMs + 500, death - (f.t - f.decision.t));
   const slowdownStartMs = Math.max(contextStartMs, decisionMs - 2000);
   const endMs = Math.min(opts.durationMs, death + 3000);
   const win = { startMs: Math.max(0, decisionMs - 1500), endMs: Math.min(opts.durationMs, death + 2500) };
@@ -66,7 +67,7 @@ export function timelineProposal(f: DeathFacts, opts: { deathVideoMs: number; du
 export function absenceProposal(a: Absence, opts: { videoMs: number; durationMs: number; minimap: boolean; trails?: Trail[] }): Proposal | null {
   const v = opts.videoMs;
   if (v < 5000 || v > opts.durationMs) return null;
-  const decisionMs = Math.max(1000, v - 8000); // le moment où il fallait se mettre en route
+  const decisionMs = Math.max(1000, v - (a.t - a.departT)); // l'heure de départ nécessaire pour arriver à temps
   const contextStartMs = Math.max(0, decisionMs - 10_000);
   const slowdownStartMs = Math.max(contextStartMs, decisionMs - 2000);
   const endMs = Math.min(opts.durationMs, v + 6000);

@@ -75,7 +75,9 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const first = recs.find((r) => r.analysisVersion === "riot-timeline-1.0.0" && r.kind !== "MISSED_OPPORTUNITY" && r.decisionMs < 13_000)!;
     expect(first.title).toMatch(/avant que l'ennemi prenne le dragon/);
     expect(first).toMatchObject({ kind: "MISTAKE", category: "ROTATIONS", confidence: "MEDIUM" });
-    expect(first.decisionMs).toBe(10_500); // 2,5 s avant la mort à 13 s
+    // Zed déjà au contact 10 s avant la mort : pause 8 s avant (13 s − 8 s), et le texte le dit.
+    expect(first.decisionMs).toBe(5000);
+    expect((await prisma.observation.findMany({ where: { recommendationId: first.id } })).map((o) => o.text).join(" ")).toMatch(/Zed était déjà à moins de 1 400 unités/);
     const mm = first.annotations.filter((a) => a.space === "MINIMAP");
     const marks = mm.filter((a) => a.type !== "path");
     expect(marks.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:danger", "highlight:enemy", "highlight:enemy"]);
@@ -91,7 +93,8 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     // Combat perdu à 0:03 (vidéo 5 s) loin du joueur : moment « rotation ratée » avec schéma minimap
     const missed = recs.find((r) => r.kind === "MISSED_OPPORTUNITY")!;
     expect(missed.title).toMatch(/Absent du combat perdu à 0:03 \(0–3\)/);
-    expect(missed.decisionMs).toBe(1000);
+    // Départ nécessaire borné au début de la partie (0:00 de jeu = 2 s dans la vidéo)
+    expect(missed.decisionMs).toBe(2000);
     expect(missed.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "path:actual", "zone:danger"]);
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
     const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;

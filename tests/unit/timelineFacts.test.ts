@@ -106,6 +106,9 @@ describe("précision des positions et moments sans mort", () => {
     expect(a[0]).toMatchObject({ kind: "FIGHT", t: 20 * 60_000 });
     expect(a[0]!.title).toMatch(/Absent du combat perdu à 20:00 \(1–4\)/);
     expect(a[0]!.distance).toBeGreaterThan(8000);
+    expect(a[0]!.travelSec).toBe(Math.round(a[0]!.distance / 380));
+    expect(a[0]!.departT).toBe(20 * 60_000 - Math.min(25_000, a[0]!.travelSec * 1000 + 3000));
+    expect(a[0]!.observations.join(" ")).toMatch(/il fallait partir vers 19:3\d/);
     expect(absences(ct, "p1")).toHaveLength(0); // impliqué dans le combat
   });
 });
@@ -123,5 +126,48 @@ describe("réapparition", () => {
     const p = positionAt(ct, 1, 43_000)!; // à mi-chemin entre la fontaine (26 s) et la minute suivante
     expect(p.x).toBeGreaterThan(4000);
     expect(p.x).toBeLessThan(5500);
+  });
+});
+
+import { decisionPoint, type CompactTimeline } from "@/lib/riot/timelineFacts";
+
+describe("instant de décision mesuré", () => {
+  const base = (zedStart: { x: number; y: number }): CompactTimeline => ({
+    v: 1,
+    participants: [
+      { pid: 1, puuid: "me", teamId: 100, champion: "Ahri" },
+      { pid: 8, puuid: "zed", teamId: 200, champion: "Zed" },
+    ],
+    frames: [{ t: 830_000, pos: { "1": { x: 9000, y: 9500 }, "8": zedStart }, gold: {}, level: { "1": 11, "8": 11 } }],
+    kills: [{ t: 840_000, pos: { x: 9000, y: 9500 }, killer: 8, victim: 1, assists: [] }],
+    objectives: [],
+    wards: [],
+  });
+
+  it("pause placée 1 s avant que l'ennemi arrive à portée", () => {
+    const ct = base({ x: 12_000, y: 9500 }); // 3 000 unités à 13:50, au contact à 14:00
+    const d = decisionPoint(ct, 1, ct.kills[0]!, [8]);
+    expect(d.basis).toBe("approach");
+    expect(d.enemy).toBe("Zed");
+    expect(d.t).toBe(834_500); // passe sous 1 400 unités à 13:55,5 → décision à 13:54,5
+    expect(d.distance).toBeLessThanOrEqual(1400);
+  });
+
+  it("bornée à 8 s avant la mort ; par défaut 2,5 s sans approche mesurable", () => {
+    const close = base({ x: 9500, y: 9500 }); // déjà au contact 10 s avant
+    expect(decisionPoint(close, 1, close.kills[0]!, [8])).toMatchObject({ basis: "already_close", t: 832_000, enemy: "Zed" });
+    const ranged = base({ x: 30_000, y: 9500 }); // positions incohérentes : pas d'approche exploitable
+    ranged.kills[0]!.pos = { x: 9000, y: 9500 };
+    expect(decisionPoint(ranged, 1, ranged.kills[0]!, [])).toMatchObject({ basis: "default", t: 837_500 });
+  });
+});
+
+import { departure } from "@/lib/riot/timelineFacts";
+describe("heure de départ", () => {
+  it("trajet / vitesse + 3 s de marge, borné entre 6 et 25 s", () => {
+    expect(departure(3800, 600_000)).toEqual({ travelSec: 10, departT: 587_000 });
+    expect(departure(500, 600_000).departT).toBe(594_000); // au moins 6 s
+    expect(departure(20_000, 600_000).departT).toBe(575_000); // au plus 25 s
+    expect(departure(3800, 4000).departT).toBe(0); // jamais avant le début
   });
 });

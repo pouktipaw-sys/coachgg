@@ -170,7 +170,39 @@ export type DeathFacts = {
   objectiveLost: { kind: string; label: string; after: number } | null;
   goldDiff: number | null;
   safePoint: Pos;
+  /** Dernier moment pour reculer : quand le premier ennemi impliqué arrive à portée (temps de jeu). */
+  decision: { t: number; basis: "approach" | "already_close" | "default"; enemy: string | null; distance: number | null };
 };
+
+const DANGER_RANGE = 1400; // unités : portée d'engagement typique (sorts, sauts)
+
+/**
+ * Instant de décision mesuré : premier moment (dans les 10 s avant la mort) où un ennemi impliqué arrive
+ * à moins de 1 400 unités, moins 1 s de réaction. Borné à [mort − 8 s ; mort − 1,5 s].
+ * Sans approche mesurable (positions trop incertaines), 2,5 s avant la mort.
+ */
+export function decisionPoint(ct: CompactTimeline, mePid: number, death: CompactTimeline["kills"][number], enemyPids: number[]): DeathFacts["decision"] {
+  const champ = (pid: number) => ct.participants.find((p) => p.pid === pid)?.champion ?? null;
+  const first = Math.max(0, death.t - 10_000);
+  for (let t = first; t <= death.t - 500; t += 250) {
+    const me = positionAt(ct, mePid, t);
+    if (!me) continue;
+    let best: { pid: number; d: number } | null = null;
+    for (const pid of enemyPids) {
+      const p = positionAt(ct, pid, t);
+      if (!p) continue;
+      const d = dist(me, p);
+      if (!best || d < best.d) best = { pid, d };
+    }
+    if (best && best.d <= DANGER_RANGE) {
+      // Déjà à portée au début de la fenêtre : le danger durait depuis plus longtemps.
+      if (t === first) return { t: Math.max(0, death.t - 8000), basis: "already_close", enemy: champ(best.pid), distance: best.d };
+      const dt = Math.min(death.t - 1500, Math.max(death.t - 8000, t - 1000));
+      return { t: dt, basis: "approach", enemy: champ(best.pid), distance: best.d };
+    }
+  }
+  return { t: death.t - 2500, basis: "default", enemy: null, distance: null };
+}
 
 export function myDeaths(ct: CompactTimeline, puuid: string) {
   const me = ct.participants.find((p) => p.puuid === puuid);
@@ -209,6 +241,7 @@ export function deathFacts(ct: CompactTimeline, puuid: string, death: CompactTim
     objectiveLost: objective ? { kind: objective.kind, label: OBJ_FR[objective.kind] ?? "un objectif", after: Math.round((objective.t - death.t) / 1000) } : null,
     goldDiff: frame ? goldOf(me.teamId) - goldOf(me.teamId === 100 ? 200 : 100) : null,
     safePoint: { x: death.pos.x + ((fountain.x - death.pos.x) / len) * step, y: death.pos.y + ((fountain.y - death.pos.y) / len) * step },
+    decision: decisionPoint(ct, me.pid, death, enemyIds),
   };
 }
 
@@ -236,6 +269,10 @@ export function diagnoseDeath(f: DeathFacts): DeathDiagnosis {
       ? `Alliés à portée (moins de 2 500 unités, positions estimées) : ${f.alliesNear.map((a) => `${a.champion} à ${a.distance}`).join(", ")}.`
       : `Aucun allié à portée${f.nearestAlly ? ` : le plus proche, ${f.nearestAlly.champion}, était à environ ${f.nearestAlly.distance} unités (position estimée)` : ""}.`,
   );
+  if (f.decision.basis === "approach")
+    obs.push(`${mmss(f.decision.t + 1000)} : ${f.decision.enemy} arrive à moins de 1 400 unités (positions estimées) — c'était le dernier moment pour reculer.`);
+  else if (f.decision.basis === "already_close")
+    obs.push(`${f.decision.enemy} était déjà à moins de 1 400 unités plus de 10 s avant la mort (positions estimées) : la position était dangereuse depuis longtemps.`);
   obs.push(f.wardsLast3min ? `${f.wardsLast3min} balise(s) posée(s) par toi dans les 3 minutes avant.` : "Aucune balise posée par toi dans les 3 minutes avant.");
   if (f.enemyHalf) obs.push("Mort dans la moitié adverse de la carte.");
   if (f.objectiveLost) obs.push(`L'équipe adverse prend ${f.objectiveLost.label} ${f.objectiveLost.after} s après ta mort.`);
@@ -325,7 +362,18 @@ export type Absence = {
   observations: string[];
   advice: string;
   estimated: boolean; // position du joueur estimée loin d'un repère (> 30 s)
+  /** Heure de départ nécessaire pour arriver à temps (temps de jeu) et durée du trajet estimée. */
+  departT: number;
+  travelSec: number;
 };
+
+const MOVE_SPEED = 380; // unités/s : vitesse moyenne avec bottes
+
+/** Trajet estimé et heure de départ pour être sur place à l'instant t (marge de 3 s ; 6 à 25 s avant). */
+export function departure(distance: number, t: number) {
+  const travelSec = Math.round(distance / MOVE_SPEED);
+  return { travelSec, departT: Math.max(0, t - Math.min(25_000, Math.max(6000, travelSec * 1000 + 3000))) };
+}
 
 /**
  * Moments où le joueur, en vie, était loin pendant que son équipe perdait un combat ou un objectif.
@@ -343,12 +391,14 @@ export function absences(ct: CompactTimeline, puuid: string): Absence[] {
     if (!myPos) continue;
     const d = dist(myPos, f.center);
     if (d < 5000) continue;
+    const dep = departure(d, f.start);
     out.push({
-      kind: "FIGHT", t: f.start, where: f.center, myPos, distance: d, estimated: anchorGapMs(ct, me.pid, f.start) > 30_000,
+      kind: "FIGHT", t: f.start, where: f.center, myPos, distance: d, estimated: anchorGapMs(ct, me.pid, f.start) > 30_000, ...dep,
       title: `Absent du combat perdu à ${mmss(f.start)} (${f.enemyLosses}–${f.allyLosses})`,
       observations: [
         `${mmss(f.start)} : ton équipe perd un combat, ${f.allyLosses} mort(s) contre ${f.enemyLosses} chez l'ennemi.`,
         `Tu étais en vie, à environ ${d} unités du combat (position estimée).`,
+        `Trajet d'environ ${dep.travelSec} s : pour arriver à temps, il fallait partir vers ${mmss(dep.departT)}.`,
       ],
       advice: "Quand ton équipe se regroupe ou qu'un objectif approche, rejoins-la : un combat se perd souvent à 4 contre 5.",
     });
@@ -362,10 +412,15 @@ export function absences(ct: CompactTimeline, puuid: string): Absence[] {
     const d = dist(myPos, pit);
     if (d < 6000) continue;
     const label = { DRAGON: "le dragon", BARON: "le Nashor", HERALD: "le Héraut", GRUBS: "les larves" }[o.kind as "DRAGON"];
+    const dep = departure(d, o.t);
     out.push({
-      kind: "OBJECTIVE", t: o.t, where: pit, myPos, distance: d, estimated: anchorGapMs(ct, me.pid, o.t) > 30_000,
+      kind: "OBJECTIVE", t: o.t, where: pit, myPos, distance: d, estimated: anchorGapMs(ct, me.pid, o.t) > 30_000, ...dep,
       title: `${label[0]!.toUpperCase()}${label.slice(1)} pris par l'ennemi pendant que tu étais loin (${mmss(o.t)})`,
-      observations: [`${mmss(o.t)} : l'équipe adverse prend ${label}.`, `Tu étais en vie, à environ ${d} unités (position estimée).`],
+      observations: [
+        `${mmss(o.t)} : l'équipe adverse prend ${label}.`,
+        `Tu étais en vie, à environ ${d} unités (position estimée).`,
+        `Trajet d'environ ${dep.travelSec} s : pour arriver à temps, il fallait partir vers ${mmss(dep.departT)}.`,
+      ],
       advice: `Une minute avant ${label}, pousse ta vague puis rapproche-toi : être là suffit souvent à empêcher l'ennemi de le prendre.`,
     });
   }
