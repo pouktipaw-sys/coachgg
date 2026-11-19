@@ -149,7 +149,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const rec = await prisma.recording.findUniqueOrThrow({ where: { id } });
     const m = await prisma.match.findFirstOrThrow({ where: { riotMatchId: "EUW1_888" } });
     expect(rec.matchId).toBe(m.id);
-    expect(Math.abs(rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(700);
+    expect(Math.abs(rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(150); // début des écrans grisés affiné à 15 images/s
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
     const note = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note;
     expect(note).toMatch(/liée à la partie.*Synchronisée automatiquement : 2 mort/);
@@ -185,7 +185,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
       return { rec: await prisma.recording.findUniqueOrThrow({ where: { id } }), note };
     };
     const fixed = await scenario("Cid", "EUW1_901", [11_000, 31_000, 51_000], "three-deaths.mp4", 22_000);
-    expect(Math.abs(fixed.rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(700);
+    expect(Math.abs(fixed.rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(150);
     expect(fixed.note).toMatch(/décalée de 20,\d s : corrigée automatiquement \(3 morts concordent/);
 
     const warned = await scenario("Dee", "EUW1_902", [11_000, 31_000], "two-deaths.mp4", 12_000);

@@ -93,6 +93,40 @@ def detect_grey(sat: np.ndarray, fps: float) -> tuple[list[dict], float, list[st
     return out[:MAX_DEATHS], baseline, warnings
 
 
+REFINE_FPS = 15.0
+
+
+def first_grey_index(sats: list[float], threshold: float) -> int | None:
+    """Premier échantillon sous le seuil de saturation, suivi d'au moins 2 autres (évite un flash isolé)."""
+    for i in range(len(sats)):
+        window = sats[i : i + 3]
+        if len(window) == 3 and all(x < threshold for x in window):
+            return i
+    return None
+
+
+def refine_grey_start(video: str, width: int, height: int, start_s: float, baseline: float, ffmpeg: str) -> float | None:
+    """Affine le début d'un écran grisé : 1,6 s autour de la détection, à 15 images/s (précision ~70 ms)."""
+    w = SAMPLE_WIDTH
+    h = int(round(w * height / width / 2) * 2)
+    t0 = max(0.0, start_s - 1.0)
+    cmd = [ffmpeg, "-v", "error", "-nostdin", "-ss", f"{t0:.3f}", "-i", video, "-t", "1.6",
+           "-vf", f"fps={REFINE_FPS},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+    try:
+        raw = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60).stdout
+    except Exception:
+        return None
+    gx, gy, gw, gh = GAME_REGION
+    gsl = (slice(int(gy * h), int((gy + gh) * h)), slice(int(gx * w), int((gx + gw) * w)))
+    fb = w * h * 3
+    sats = []
+    for k in range(len(raw) // fb):
+        frame = np.frombuffer(raw[k * fb : (k + 1) * fb], np.uint8).reshape(h, w, 3)
+        sats.append(float(cv2.cvtColor(frame[gsl], cv2.COLOR_BGR2HSV)[..., 1].mean()))
+    i = first_grey_index(sats, GREY_RATIO * baseline)
+    return None if i is None else t0 + i / REFINE_FPS
+
+
 def detect_activity(motion: np.ndarray, fps: float, exclude: list[tuple[int, int]]) -> tuple[list[dict], float]:
     if len(motion) < 3:
         return [], 0.0
@@ -242,9 +276,11 @@ def main() -> int:
     for k, g in enumerate(greys):
         a0 = max(0, g["startIdx"] - ctx)
         pre = s.motion[a0 : g["startIdx"]]
+        refined = refine_grey_start(a.video, a.width, a.height, g["startIdx"] / fps, sat_base, a.ffmpeg)
+        start_ms = int(round(refined * 1000)) if refined is not None and abs(refined * 1000 - ms(g["startIdx"])) <= 1200 else ms(g["startIdx"])
         ev = {
             "type": "grey_screen",
-            "startMs": ms(g["startIdx"]),
+            "startMs": start_ms,
             "endMs": ms(g["endIdx"] + 1),
             "confidence": g["confidence"],
             "metrics": {"saturationRatio": g["saturationRatio"], "durationSec": g["durationSec"]},

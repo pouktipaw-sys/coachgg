@@ -59,3 +59,10 @@ class Minimap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRefineGreyStart(unittest.TestCase):
+    def test_first_index_ignores_isolated_flash(self):
+        from analyze import first_grey_index
+        self.assertEqual(first_grey_index([90, 20, 90, 90, 20, 20, 20, 20], 30), 4)
+        self.assertIsNone(first_grey_index([90, 90, 20, 20], 30))
