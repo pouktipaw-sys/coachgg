@@ -13,6 +13,7 @@ import { runRenderer } from "./clipExport";
 import { notify } from "./notifications";
 import { formatMs } from "@/lib/annotations/coaching";
 import { CONFIDENCE_LABELS } from "@/lib/annotations/schema";
+import { planSegments, type Segment } from "@/lib/analysis/recapPlan";
 import type { GameReport } from "./analysis/ai";
 
 const MAX_MOMENTS = 12;
@@ -67,6 +68,8 @@ export async function renderRecap(job: AnalysisJob) {
   const KIND_COLOR: Record<string, number[]> = { MISTAKE: [240, 82, 82], GOOD_ACTION: [49, 196, 141], DEATH: [240, 82, 82], FIGHT: [255, 138, 76], MISSED_OPPORTUNITY: [251, 191, 36] };
   const KIND_FR: Record<string, string> = { MISTAKE: "Décision à revoir", GOOD_ACTION: "Bonne action", OBJECTIVE: "Objectif", FIGHT: "Combat", MISSED_OPPORTUNITY: "Occasion manquée", INTERESTING: "À revoir", DEATH: "Mort" };
 
+  // Extraits sans répétition : les moments qui se chevauchent partagent un seul extrait.
+  const segments = planSegments(moments, { maxSegmentMs: MAX_SEGMENT_MS, durationMs: rec.durationMs ?? Number.MAX_SAFE_INTEGER });
   const items: object[] = [
     {
       mode: "card",
@@ -79,52 +82,58 @@ export async function renderRecap(job: AnalysisJob) {
       ],
       footer,
     },
-    ...moments.flatMap((m, i) => {
+    ...segments.flatMap((seg) => {
+      const first = seg.moments[0]!;
+      const idx = seg.moments.map((m) => moments.indexOf(m) + 1);
+      const label = idx.length > 1 ? `Moments ${idx[0]}–${idx.at(-1)}/${moments.length}` : `Moment ${idx[0]}/${moments.length}`;
+      const at = (ms: number) =>
+        rec.gameStartOffsetMs != null && ms - rec.gameStartOffsetMs >= 0 ? `${formatMs(ms - rec.gameStartOffsetMs)} en jeu` : `${formatMs(ms)} dans la vidéo`;
       const chapter = {
         mode: "card",
         layout: "chapter",
         seconds: 2.5,
-        title: `Moment ${i + 1}/${moments.length}`,
-        subtitle: `${KIND_FR[m.kind] ?? "À revoir"} · ${rec.gameStartOffsetMs != null && m.decisionMs - rec.gameStartOffsetMs >= 0 ? `${formatMs(m.decisionMs - rec.gameStartOffsetMs)} en jeu` : `${formatMs(m.decisionMs)} dans la vidéo`}`,
-        headline: m.title,
-        color: KIND_COLOR[m.kind] ?? [251, 191, 36],
-        index: i,
+        title: label,
+        subtitle: `${KIND_FR[first.kind] ?? "À revoir"} · ${at(first.decisionMs)}`,
+        headline: seg.moments.map((m) => m.title).join(" · "),
+        color: KIND_COLOR[first.kind] ?? [251, 191, 36],
+        index: idx[0]! - 1,
         count: moments.length,
         footer,
       };
-      return [chapter, segment(m, i)];
+      return [chapter, segment(seg, label)];
     }),
   ];
-  function segment(m: (typeof moments)[number], i: number) {
-      const startMs = m.contextStartMs;
-      const endMs = Math.min(m.endMs, startMs + MAX_SEGMENT_MS, R.durationMs ?? m.endMs);
-      const alt = (m.alternatives as { label: string; conditions?: string }[])[0];
-      return {
-        video: storage().localPath(R.playbackKey!),
-        startMs,
-        endMs,
-        minimap: R.minimapRegion,
-        footer: `CoachGG · Moment ${i + 1}/${moments.length} · ${m.title}`.slice(0, 110),
-        annotations: m.annotations
-          .filter((a) => a.startMs < endMs && a.endMs > startMs)
-          .map((a) => ({ type: a.type, style: a.style, space: a.space, geometry: a.geometry, startMs: a.startMs, endMs: a.endMs, label: a.label, recommendationId: a.recommendationId })),
-        moments: [
-          {
-            id: m.id,
-            title: m.title,
-            contextStartMs: m.contextStartMs,
-            slowdownStartMs: m.slowdownStartMs,
-            decisionMs: m.decisionMs,
-            endMs,
-            slowdownRate: m.slowdownRate,
-            observation: m.observations.map((o) => o.text).join(" "),
-            alternative: alt ? `${alt.label}${alt.conditions ? ` (si ${alt.conditions})` : ""}` : "",
-            advice: m.advice,
-            confidence: CONFIDENCE_LABELS[m.confidence],
-            origin: origin(m),
-          },
-        ],
-      };
+  function segment(seg: Segment<(typeof moments)[number]>, label: string) {
+    const { startMs, endMs } = seg;
+    const ids = new Set(seg.moments.map((m) => m.id));
+    return {
+      video: storage().localPath(R.playbackKey!),
+      startMs,
+      endMs,
+      minimap: R.minimapRegion,
+      footer: `CoachGG · ${label} · ${seg.moments.map((m) => m.title).join(" · ")}`.slice(0, 110),
+      annotations: seg.moments
+        .flatMap((m) => m.annotations)
+        .filter((a) => a.recommendationId && ids.has(a.recommendationId) && a.startMs < endMs && a.endMs > startMs)
+        .map((a) => ({ type: a.type, style: a.style, space: a.space, geometry: a.geometry, startMs: a.startMs, endMs: a.endMs, label: a.label, recommendationId: a.recommendationId })),
+      moments: seg.moments.map((m) => {
+        const alt = (m.alternatives as { label: string; conditions?: string }[])[0];
+        return {
+          id: m.id,
+          title: m.title,
+          contextStartMs: Math.max(startMs, m.contextStartMs),
+          slowdownStartMs: Math.max(startMs, m.slowdownStartMs),
+          decisionMs: Math.min(Math.max(startMs, m.decisionMs), endMs),
+          endMs: Math.min(m.endMs, endMs),
+          slowdownRate: m.slowdownRate,
+          observation: m.observations.map((o) => o.text).join(" "),
+          alternative: alt ? `${alt.label}${alt.conditions ? ` (si ${alt.conditions})` : ""}` : "",
+          advice: m.advice,
+          confidence: CONFIDENCE_LABELS[m.confidence],
+          origin: origin(m),
+        };
+      }),
+    };
   }
   if (report)
     items.push({
@@ -152,7 +161,7 @@ export async function renderRecap(job: AnalysisJob) {
     await storage().importFile(key, out);
     await prisma.recording.update({ where: { id: rec.id }, data: { recapKey: key, recapStatus: "READY", recapAt: new Date(), recapError: null } });
     await notify(rec.ownerId, { type: "recap_ready", title: "Ta vidéo récap est prête 🎬", body: `« ${rec.title} » : ${moments.length} moment(s) annotés et le bilan.`, link: `/app/videos/${rec.id}#recap` });
-    return { key, moments: moments.length, report: !!report };
+    return { key, moments: moments.length, segments: segments.length, report: !!report };
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

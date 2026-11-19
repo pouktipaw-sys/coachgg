@@ -100,6 +100,19 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;
     expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée.*1 moment\(s\) sans mort/);
     expect(await prisma.clip.count({ where: { recordingId: id, kind: "MISSED_OPPORTUNITY" } })).toBe(1);
+
+    // Récap monté de bout en bout (reconstitution comprise), moments qui se chevauchent fusionnés
+    const recap = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "RENDER_RECAP" } });
+    expect(recap.status).toBe("SUCCEEDED");
+    const r = recap.result as { moments: number; segments: number };
+    expect(r.moments).toBe(3);
+    expect(r.segments).toBeLessThan(r.moments);
+    const after = await prisma.recording.findUniqueOrThrow({ where: { id } });
+    expect(after.recapStatus).toBe("READY");
+    const { execFileSync } = await import("node:child_process");
+    const { storage } = await import("@/server/storage");
+    const dur = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", storage().localPath(after.recapKey!)]).toString());
+    expect(dur).toBeGreaterThan(10);
     const clips = await prisma.clip.findMany({ where: { recordingId: id, kind: "DEATH" }, orderBy: { startMs: "asc" } });
     expect(clips.length).toBe(2); // la mort non vue à l'image a aussi son clip
   }, 240_000);
