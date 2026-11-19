@@ -99,6 +99,8 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
     const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;
     expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée.*1 moment\(s\) sans mort/);
+    const syncNote = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note;
+    expect(syncNote).toMatch(/Synchro vérifiée : 1 mort\(s\) concordent/);
     expect(await prisma.clip.count({ where: { recordingId: id, kind: "MISSED_OPPORTUNITY" } })).toBe(1);
 
     // Récap monté de bout en bout (reconstitution comprise), moments qui se chevauchent fusionnés
@@ -153,4 +155,41 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect(note).toMatch(/liée à la partie.*Synchronisée automatiquement : 2 mort/);
     expect(await prisma.recommendation.count({ where: { recordingId: id, analysisVersion: "riot-timeline-1.0.0" } })).toBe(2);
   }, 240_000);
+  it("synchro réglée fausse : corrigée avec 3 morts concordantes, simple avertissement avec 2", async () => {
+    // Vidéo de 70 s avec trois écrans grisés (13, 33, 53 s) ; morts de la partie à 0:11, 0:31, 0:51 → bon décalage : 2 s.
+    if (!existsSync(fixture("three-deaths.mp4")))
+      execSync(
+        "ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 70 -vf \"hue=s=0:enable='between(t,13,18)+between(t,33,38)+between(t,53,58)'\" -c:v libx264 -pix_fmt yuv420p three-deaths.mp4",
+        { cwd: fixture("") },
+      );
+    const scenario = async (name: string, matchId: string, deaths: number[], video: string, wrongOffset: number) => {
+      const u = await makeUser(name);
+      await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Me", tagLine: "EUW", platform: "EUW1", puuid: "ME" } });
+      const tl = structuredClone(timeline);
+      tl.metadata.matchId = matchId;
+      (tl.info.frames[0]!.events as object[]).splice(0, Infinity, ...deaths.map((t, i) => ({ type: "CHAMPION_KILL", timestamp: t, position: { x: 7000 + i * 500, y: 7000 }, killerId: 6, victimId: 1, assistingParticipantIds: [] })));
+      const client = new RiotClient("k", async (url: string) => {
+        if (url.includes(`/${matchId}/timeline`)) return new Response(JSON.stringify(tl), { status: 200 });
+        if (url.includes("/ids?")) return new Response(JSON.stringify([matchId]), { status: 200 });
+        if (url.includes(`/matches/${matchId}`)) return new Response(JSON.stringify({ ...match, metadata: { matchId } }), { status: 200 });
+        return new Response("{}", { status: 404 });
+      });
+      await importRecentMatches(u.id, 1, client);
+      const m = await prisma.match.findFirstOrThrow({ where: { riotMatchId: matchId } });
+      const id = await uploadFile(u.id, video);
+      await prisma.recording.update({ where: { id }, data: { matchId: m.id, gameStartOffsetMs: wrongOffset } });
+      await requestAnalysis(id, 10);
+      await drain();
+      const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+      const note = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note!;
+      return { rec: await prisma.recording.findUniqueOrThrow({ where: { id } }), note };
+    };
+    const fixed = await scenario("Cid", "EUW1_901", [11_000, 31_000, 51_000], "three-deaths.mp4", 22_000);
+    expect(Math.abs(fixed.rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(700);
+    expect(fixed.note).toMatch(/décalée de 20,\d s : corrigée automatiquement \(3 morts concordent/);
+
+    const warned = await scenario("Dee", "EUW1_902", [11_000, 31_000], "two-deaths.mp4", 12_000);
+    expect(warned.rec.gameStartOffsetMs).toBe(12_000); // pas de correction avec seulement 2 morts
+    expect(warned.note).toMatch(/semble décalée d'environ 10,\d s/);
+  }, 400_000);
 });

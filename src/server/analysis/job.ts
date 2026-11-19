@@ -18,7 +18,7 @@ import { requestRecap } from "../recap";
 import { ensureTimelineFacts } from "../riot/import";
 import { absences, deathFacts, deathTrailPlayers, myDeaths, trails } from "@/lib/riot/timelineFacts";
 import { TIMELINE_VERSION, absenceProposal, timelineProposal } from "@/lib/analysis/timelineProposals";
-import { alignOffset, parseRecordingDate, pickMatch } from "@/lib/analysis/autoSync";
+import { alignOffset, checkOffset, parseRecordingDate, pickMatch } from "@/lib/analysis/autoSync";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 type Step = { name: string; status: "ok" | "skipped" | "warning" | "failed"; ms: number; note?: string };
@@ -149,19 +149,43 @@ export async function analyzeRecording(job: AnalysisJob) {
         Object.assign(rec, { matchId: m.id });
         notes.push(`Vidéo liée à la partie du ${m.startAt.toLocaleString("fr-FR")} (date du fichier).`);
       }
-      if (rec.gameStartOffsetMs == null && rec.matchId) {
+      let status: "ok" | "warning" | "skipped" = "ok";
+      if (rec.matchId) {
         const me = await prisma.matchParticipant.findFirst({ where: { matchId: rec.matchId, userId: rec.ownerId }, select: { puuid: true } });
         const ct = me?.puuid ? await ensureTimelineFacts(rec.matchId) : null;
         const gameDeaths = ct && me?.puuid ? myDeaths(ct, me.puuid).map((d) => d.t) : [];
         const videoDeaths = out.events.filter((e) => e.type === "grey_screen").map((e) => e.startMs);
         const aligned = alignOffset(videoDeaths, gameDeaths);
-        if (aligned) {
-          await prisma.recording.update({ where: { id: rec.id }, data: { gameStartOffsetMs: aligned.offsetMs } });
-          Object.assign(rec, { gameStartOffsetMs: aligned.offsetMs });
-          notes.push(`Synchronisée automatiquement : ${aligned.matches} mort(s) alignée(s) avec la timeline (00:00 en jeu à ${(aligned.offsetMs / 1000).toFixed(1)} s de la vidéo).`);
-        } else notes.push(`Synchronisation automatique impossible (${videoDeaths.length} mort(s) vue(s) à l'image, ${gameDeaths.length} dans la timeline ; il en faut 2 concordantes) : utilise l'onglet « Synchro ».`);
+        const s1 = (ms: number) => (ms / 1000).toFixed(1).replace(".", ",");
+        if (rec.gameStartOffsetMs == null) {
+          if (aligned) {
+            await prisma.recording.update({ where: { id: rec.id }, data: { gameStartOffsetMs: aligned.offsetMs } });
+            Object.assign(rec, { gameStartOffsetMs: aligned.offsetMs });
+            notes.push(`Synchronisée automatiquement : ${aligned.matches} mort(s) alignée(s) avec la timeline, écart moyen ${s1(aligned.residualMs)} s (00:00 en jeu à ${s1(aligned.offsetMs)} s de la vidéo).`);
+          } else {
+            status = "warning";
+            notes.push(`Synchronisation automatique impossible ou ambiguë (${videoDeaths.length} mort(s) vue(s) à l'image, ${gameDeaths.length} dans la timeline ; il en faut 2 concordantes sans ambiguïté) : utilise l'onglet « Synchro ».`);
+          }
+        } else if (videoDeaths.length && gameDeaths.length) {
+          // Synchro déjà réglée (à la main ou par l'application PC) : vérifiée contre les vraies morts.
+          const check = checkOffset(videoDeaths, gameDeaths, rec.gameStartOffsetMs);
+          // Vérifiée seulement si aucun autre réglage n'aligne davantage de morts (évite un décalage d'une mort).
+          const better = aligned && aligned.matches > check.matches && Math.abs(aligned.offsetMs - rec.gameStartOffsetMs) > 3000;
+          if (!better && check.matches > 0 && check.matches >= Math.min(2, videoDeaths.length, gameDeaths.length)) {
+            notes.push(`Synchro vérifiée : ${check.matches} mort(s) concordent avec la timeline (écart moyen ${s1(check.residualMs ?? 0)} s).`);
+          } else if (aligned && aligned.matches >= 3 && Math.abs(aligned.offsetMs - rec.gameStartOffsetMs) > 3000) {
+            const delta = aligned.offsetMs - rec.gameStartOffsetMs;
+            await prisma.recording.update({ where: { id: rec.id }, data: { gameStartOffsetMs: aligned.offsetMs } });
+            Object.assign(rec, { gameStartOffsetMs: aligned.offsetMs });
+            status = "warning";
+            notes.push(`Synchro réglée décalée de ${s1(Math.abs(delta))} s : corrigée automatiquement (${aligned.matches} morts concordent, écart moyen ${s1(aligned.residualMs)} s).`);
+          } else if (aligned && Math.abs(aligned.offsetMs - rec.gameStartOffsetMs) > 3000) {
+            status = "warning";
+            notes.push(`Attention : la synchro semble décalée d'environ ${s1(Math.abs(aligned.offsetMs - rec.gameStartOffsetMs))} s (${aligned.matches} morts concordent avec un autre réglage). Vérifie l'onglet « Synchro ».`);
+          } else notes.push("Synchro réglée non vérifiable (morts vues à l'image et timeline ne concordent pas assez).");
+        }
       }
-      return notes.length ? { value: null, note: notes.join(" ") } : { value: null, status: "skipped", note: "Déjà liée et synchronisée." };
+      return notes.length ? { value: null, status, note: notes.join(" ") } : { value: null, status: "skipped", note: "Déjà liée et synchronisée." };
     });
 
     // 8 a. Timeline Riot : morts réelles du joueur, faits mesurés et schéma minimap (vidéo liée et synchronisée).
