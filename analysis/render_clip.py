@@ -305,41 +305,105 @@ def wrap(d, text, f, max_w):
     return lines
 
 
+CHIP_TONE = {"bad": (240, 82, 82), "warn": (251, 191, 36), "good": (49, 196, 141), "info": (124, 196, 255)}
+
+
+def chip_rows(d, chips, f, max_w):
+    """Répartit les pastilles en lignes (largeur max) ; renvoie [[(texte, couleur, largeur)]]."""
+    rows, cur, used = [], [], 0
+    for c in chips:
+        tw = d.textlength(c["text"], font=f) + 18
+        if cur and used + tw > max_w:
+            rows.append(cur)
+            cur, used = [], 0
+        cur.append((c["text"], CHIP_TONE.get(c.get("tone"), CHIP_TONE["info"]), tw))
+        used += tw + 6
+    if cur:
+        rows.append(cur)
+    return rows
+
+
 def explanation_panel(layer, m, fonts, w, h):
     d = ImageDraw.Draw(layer)
     pw = min(560, int(w * 0.46))
     x0, y0 = w - pw - 24, 70
     body = fonts["body"]
+    inner = pw - 32
     lines = []
     lines.append(("title", m.get("title", "")))
-    if m.get("observation"):
+    rows = chip_rows(d, m.get("chips") or [], fonts["small"], inner)
+    for r in rows:
+        lines.append(("chips", r))
+    obs = m.get("observations") or ([m["observation"]] if m.get("observation") else [])
+    if obs:
         lines.append(("label", "Observé"))
-        lines += [("body", l) for l in wrap(d, m["observation"], body, pw - 32)]
+        for o in obs[:3]:
+            for i, l in enumerate(wrap(d, o, body, inner - 16)):
+                lines.append(("bullet" if i == 0 else "cont", l))
     if m.get("alternative"):
         lines.append(("label", "Alternative proposée"))
-        lines += [("alt", l) for l in wrap(d, m["alternative"], body, pw - 32)]
+        lines += [("alt", l) for l in wrap(d, m["alternative"], body, inner)]
     if m.get("advice"):
         lines.append(("label", "Conseil"))
-        lines += [("body", l) for l in wrap(d, m["advice"], body, pw - 32)]
+        lines += [("body", l) for l in wrap(d, m["advice"], body, inner)]
     if m.get("origin"):
         lines.append(("muted", m["origin"]))
     lines.append(("muted", f"{m.get('confidence', '')} · une alternative est une proposition, pas une certitude"))
-    heights = {"title": 30, "label": 24, "body": 22, "alt": 22, "muted": 20}
+    heights = {"title": 30, "chips": 28, "label": 24, "body": 22, "bullet": 22, "cont": 22, "alt": 22, "muted": 20}
+    # Panneau trop haut pour l'image : on coupe les dernières lignes d'observation.
+    while 24 + sum(heights[k] for k, _ in lines) > h - y0 - 40 and any(k == "cont" for k, _ in lines):
+        idx = max(i for i, (k, _) in enumerate(lines) if k == "cont")
+        lines.pop(idx)
     ph = 24 + sum(heights[k] for k, _ in lines)
     d.rounded_rectangle([x0, y0, x0 + pw, y0 + ph], radius=12, fill=(10, 13, 20, 230), outline=(76, 157, 255, 255), width=2)
     y = y0 + 14
-    for kind, text in lines:
+    for kind, content in lines:
         if kind == "title":
-            d.text((x0 + 16, y), text, font=fonts["title"], fill=(255, 255, 255, 255))
+            d.text((x0 + 16, y), content, font=fonts["title"], fill=(255, 255, 255, 255))
+        elif kind == "chips":
+            cx = x0 + 16
+            for text, col, tw in content:
+                # Fond opaque (teinte mêlée au fond du panneau) : un fond transparent laisserait voir la vidéo.
+                bg = tuple(int(c * 0.28 + p * 0.72) for c, p in zip(col, (10, 13, 20)))
+                d.rounded_rectangle([cx, y + 1, cx + tw, y + 23], radius=11, fill=bg + (255,), outline=col + (255,), width=1)
+                d.text((cx + 9, y + 4), text, font=fonts["small"], fill=(255, 255, 255, 255))
+                cx += tw + 6
         elif kind == "label":
-            d.text((x0 + 16, y + 4), text.upper(), font=fonts["small"], fill=(139, 149, 168, 255))
+            d.text((x0 + 16, y + 4), content.upper(), font=fonts["small"], fill=(139, 149, 168, 255))
         elif kind == "alt":
-            d.text((x0 + 16, y), text, font=body, fill=(49, 196, 141, 255))
+            d.text((x0 + 16, y), content, font=body, fill=(49, 196, 141, 255))
         elif kind == "muted":
-            d.text((x0 + 16, y + 2), text, font=fonts["small"], fill=(139, 149, 168, 255))
+            d.text((x0 + 16, y + 2), content, font=fonts["small"], fill=(139, 149, 168, 255))
+        elif kind == "bullet":
+            d.text((x0 + 16, y), "•", font=body, fill=(124, 196, 255, 255))
+            d.text((x0 + 32, y), content, font=body, fill=(230, 233, 239, 255))
+        elif kind == "cont":
+            d.text((x0 + 32, y), content, font=body, fill=(230, 233, 239, 255))
         else:
-            d.text((x0 + 16, y), text, font=body, fill=(230, 233, 239, 255))
+            d.text((x0 + 16, y), content, font=body, fill=(230, 233, 239, 255))
         y += heights[kind]
+
+
+def phase_bar(layer, m, t, fonts, w, h):
+    """Barre de déroulé du moment : contexte → ralenti → décision (losange) → conséquence, curseur à t."""
+    d = ImageDraw.Draw(layer)
+    a, s, dc, e = m["contextStartMs"], m["slowdownStartMs"], m["decisionMs"], m["endMs"]
+    if e <= a:
+        return
+    x0, x1, y = 18, int(w * 0.42), h - 22
+    span = x1 - x0
+    X = lambda ms: x0 + span * (min(max(ms, a), e) - a) / (e - a)  # noqa: E731
+    d.rounded_rectangle([x0 - 8, y - 26, x1 + 8, y + 12], radius=8, fill=(10, 13, 20, 200))
+    for (p0, p1, col, name) in ((a, s, (139, 149, 168), "Contexte"), (s, dc, (76, 157, 255), "Ralenti"), (dc, e, (240, 82, 82), "Conséquence")):
+        if p1 <= p0:
+            continue
+        d.rounded_rectangle([X(p0), y - 3, X(p1), y + 3], radius=3, fill=col + (230,))
+        if X(p1) - X(p0) > d.textlength(name, font=fonts["small"]) + 6:
+            d.text((X(p0) + 2, y - 22), name, font=fonts["small"], fill=col + (255,))
+    xd = X(dc)
+    d.polygon([(xd, y - 9), (xd + 7, y), (xd, y + 9), (xd - 7, y)], fill=(251, 191, 36, 255), outline=(10, 13, 20, 255))
+    xc = X(t)
+    d.line([(xc, y - 12), (xc, y + 10)], fill=(255, 255, 255, 255), width=3)
 
 
 def banner(layer, text, f, color=(76, 157, 255)):
@@ -437,6 +501,7 @@ def render(spec: dict):
             banner(layer, f"Pause · moment de décision — {freeze['title']}", fonts["banner"], (251, 191, 36))
             if freeze["elapsed"] >= 0.6:
                 explanation_panel(layer, freeze, fonts, out_w, out_h)
+            phase_bar(layer, freeze, freeze["decisionMs"], fonts, out_w, out_h)
         elif m:
             if t < m["slowdownStartMs"]:
                 banner(layer, f"Contexte avant l'action — {m['title']}", fonts["banner"])
@@ -444,6 +509,7 @@ def render(spec: dict):
                 banner(layer, f"Ralenti ×{str(m['slowdownRate']).replace('.', ',')} — {m['title']}", fonts["banner"])
             else:
                 banner(layer, f"Conséquence — {m['title']}", fonts["banner"])
+            phase_bar(layer, m, t, fonts, out_w, out_h)
         footer(layer, spec.get("footer", "CoachGG"), fonts["small"])
         out = Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB")
         enc.stdin.write(out.tobytes())

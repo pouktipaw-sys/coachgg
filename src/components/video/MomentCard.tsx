@@ -1,4 +1,5 @@
 "use client";
+import { momentChips } from "@/lib/analysis/chips";
 // Explication structurée d'un moment : Observations / Interprétation /
 // Alternatives / Confiance / Conseil / Références.
 import { useState } from "react";
@@ -23,6 +24,8 @@ export const KIND_ICON: Record<RecommendationDTO["kind"], string> = {
   INTERESTING: "★",
   DEATH: "☠",
 };
+
+const CHIP_COLOR = { bad: "#f05252", warn: "#fbbf24", good: "#31c48d", info: "#7cc4ff" } as const;
 
 export function MomentCard({
   m,
@@ -71,6 +74,7 @@ export function MomentCard({
     }
   }
 
+  const chips = momentChips(m.autoEvidence);
   return (
     <article className="space-y-4 text-sm" aria-label={`Moment : ${m.title}`} data-testid="moment-card">
       <header>
@@ -86,6 +90,15 @@ export function MomentCard({
           )}
         </div>
         <h3 className="mt-2 text-base font-semibold">{m.title}</h3>
+        {chips.length > 0 && (
+          <ul className="mt-2 flex flex-wrap gap-1" data-testid="moment-chips" aria-label="Faits mesurés">
+            {chips.map((c) => (
+              <li key={c.text} className="rounded-full border px-2 py-0.5 text-xs" style={{ borderColor: CHIP_COLOR[c.tone], color: CHIP_COLOR[c.tone] }}>
+                {c.text}
+              </li>
+            ))}
+          </ul>
+        )}
       </header>
 
       {pending && isOwner && (

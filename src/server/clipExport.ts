@@ -13,6 +13,7 @@ import { analyzerAvailable } from "./analysis/runner";
 import { notify } from "./notifications";
 import { env } from "@/lib/env";
 import { CONFIDENCE_LABELS } from "@/lib/annotations/schema";
+import { momentChips } from "@/lib/analysis/chips";
 
 const RENDERER = path.resolve(process.cwd(), "analysis/render_clip.py");
 
@@ -37,7 +38,7 @@ export async function exportClip(job: AnalysisJob) {
     }),
     prisma.recommendation.findMany({
       where: { recordingId: rec.id, decisionMs: { gte: clip.startMs, lt: clip.endMs }, ...visibleRecommendationWhere(isOwner), status: { not: "DRAFT" } },
-      include: { observations: { orderBy: { createdAt: "asc" }, take: 2 } },
+      include: { observations: { orderBy: { createdAt: "asc" }, take: 4 } },
       orderBy: { decisionMs: "asc" },
     }),
   ]);
@@ -70,6 +71,8 @@ export async function exportClip(job: AnalysisJob) {
           endMs: m.endMs,
           slowdownRate: m.slowdownRate,
           observation: m.observations.map((o) => o.text).join(" "),
+          observations: m.observations.map((o) => o.text),
+          chips: momentChips(m.autoEvidence),
           alternative: alt ? `${alt.label}${alt.conditions ? ` (si ${alt.conditions})` : ""}` : "",
           advice: m.advice,
           confidence: CONFIDENCE_LABELS[m.confidence],

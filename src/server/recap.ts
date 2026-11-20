@@ -14,6 +14,7 @@ import { notify } from "./notifications";
 import { formatMs } from "@/lib/annotations/coaching";
 import { CONFIDENCE_LABELS } from "@/lib/annotations/schema";
 import { planSegments, type Segment } from "@/lib/analysis/recapPlan";
+import { momentChips } from "@/lib/analysis/chips";
 import type { GameReport } from "./analysis/ai";
 
 const MAX_MOMENTS = 12;
@@ -49,7 +50,7 @@ export async function renderRecap(job: AnalysisJob) {
 
   const moments = await prisma.recommendation.findMany({
     where: { recordingId: rec.id, status: { not: "REJECTED" } },
-    include: { observations: { orderBy: { createdAt: "asc" }, take: 2 }, annotations: true },
+    include: { observations: { orderBy: { createdAt: "asc" }, take: 4 }, annotations: true },
     orderBy: { decisionMs: "asc" },
     take: MAX_MOMENTS,
   });
@@ -127,6 +128,8 @@ export async function renderRecap(job: AnalysisJob) {
           endMs: Math.min(m.endMs, endMs),
           slowdownRate: m.slowdownRate,
           observation: m.observations.map((o) => o.text).join(" "),
+          observations: m.observations.map((o) => o.text),
+          chips: momentChips(m.autoEvidence),
           alternative: alt ? `${alt.label}${alt.conditions ? ` (si ${alt.conditions})` : ""}` : "",
           advice: m.advice,
           confidence: CONFIDENCE_LABELS[m.confidence],

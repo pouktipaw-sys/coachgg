@@ -66,3 +66,16 @@ class TestRefineGreyStart(unittest.TestCase):
         from analyze import first_grey_index
         self.assertEqual(first_grey_index([90, 20, 90, 90, 20, 20, 20, 20], 30), 4)
         self.assertIsNone(first_grey_index([90, 90, 20, 20], 30))
+
+
+class TestChipRows(unittest.TestCase):
+    def test_wraps_chips_to_panel_width(self):
+        from PIL import Image, ImageDraw
+        from render_clip import chip_rows, font
+        d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        chips = [{"text": "1 contre 2", "tone": "bad"}, {"text": "Niv. 7 vs 9", "tone": "bad"}, {"text": "1 850 or en poche", "tone": "warn"}]
+        rows = chip_rows(d, chips, font(13), 10_000)
+        self.assertEqual(len(rows), 1)
+        rows = chip_rows(d, chips, font(13), 120)
+        self.assertEqual([len(r) for r in rows], [1, 1, 1])
+        self.assertEqual(rows[0][0][1], (240, 82, 82))
