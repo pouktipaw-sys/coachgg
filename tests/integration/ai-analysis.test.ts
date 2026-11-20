@@ -28,6 +28,14 @@ function fakeClaude(calls: Req[]) {
                 kind: "MISTAKE",
                 category: "VISION",
                 observations: ["Image 4 : aucun allié visible autour du champion.", "Image 5 : deux ennemis apparaissent à droite."],
+                checklist: { wave: "Vague poussée chez l'ennemi", vision: "Aucune balise visible, 3 ennemis absents de la minimap", numbers: "Seul face à 2", cooldowns: "Flash non visible", position: "Au-delà de la rivière" },
+                causes: ["Avancée seul sans vision", "Alliés trop loin"],
+                evidence: [
+                  { claim: "Aucun allié autour", source: "image 4" },
+                  { claim: "Deux ennemis arrivent", source: "image 5" },
+                  { claim: "Ennemi invisible", source: "image 9" },
+                ],
+                uncertainties: ["Sorts de l'ennemi inconnus"],
                 interpretation: "Le joueur avance dans une zone sans vision alors que ses alliés sont loin.",
                 alternative: { label: "Reculer vers la tourelle", conditions: "si les ennemis ne sont pas visibles", limits: "l'issue n'est pas garantie" },
                 advice: "Avant d'avancer, regarde la minimap et pose une balise.",
@@ -80,6 +88,11 @@ describe.skipIf(!available)("analyse IA (faux client Claude)", () => {
     const rec = await prisma.recommendation.findFirstOrThrow({ where: { recordingId: id, title: "Mort en avançant seul sans vision" }, include: { annotations: true, observations: true } });
     expect(rec).toMatchObject({ status: "DRAFT", provenance: "AUTOMATIC", kind: "MISTAKE", category: "VISION", confidence: "MEDIUM", advice: "Avant d'avancer, regarde la minimap et pose une balise." });
     expect(rec.analysisVersion).toBe("ia-1.0.0 (claude-opus-5-5)");
+    expect(rec.interpretation).toMatch(/Causes \(par ordre d'importance\) : Avancée seul sans vision ; Alliés trop loin/);
+    expect(rec.interpretation).toMatch(/Incertitudes : Sorts de l'ennemi inconnus/);
+    const ev = (rec.autoEvidence as { ai: { evidence: { source: string }[]; rejected: number } }).ai;
+    expect(ev.evidence.map((e) => e.source)).toEqual(["image 4", "image 5"]); // « image 9 » n'existe pas : rejetée
+    expect(ev.rejected).toBe(1);
     expect(rec.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["click:alternative", "highlight:enemy", "path:actual", "path:alternative", "zone:danger"]);
     const alt = rec.annotations.find((a) => a.style === "alternative")!;
     expect((alt.geometry as { points: { x: number; y: number }[] }).points[2]).toEqual({ x: 1, y: 0 }); // coordonnées bornées
@@ -122,7 +135,7 @@ describe.skipIf(!available)("analyse IA (faux client Claude)", () => {
   });
   it("plafond de budget : aucune requête IA si le budget du mois ne couvre pas un moment ; coûts cumulés entre relances", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key";
-    process.env.ANALYSIS_AI_BUDGET_USD = "0.05"; // moins que la réserve d'un moment (0,08 $)
+    process.env.ANALYSIS_AI_BUDGET_USD = "0.05"; // moins que la réserve d'un moment (0,12 $)
     const calls: Req[] = [];
     aiDeps.client = () => fakeClaude(calls);
     const u = await makeUser("Dan");

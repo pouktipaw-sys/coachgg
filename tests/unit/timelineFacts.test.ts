@@ -171,3 +171,60 @@ describe("heure de départ", () => {
     expect(departure(3800, 4000).departT).toBe(0); // jamais avant le début
   });
 });
+
+import { objectiveTimers } from "@/lib/riot/timelineFacts";
+
+describe("diagnostic expert : niveaux, or, objectifs, facteurs aggravants", () => {
+  /** Ahri (pid 1) tuée à 12:00 par Zed (pid 8) seul, à côté d'un allié ; niveaux et or paramétrables. */
+  const scene = (o: { meLvl: number; zedLvl: number; gold?: number; ally?: boolean; dragonKilledAt?: number }): CompactTimeline => ({
+    v: 1,
+    participants: [
+      { pid: 1, puuid: "me", teamId: 100, champion: "Ahri" },
+      { pid: 2, puuid: "vi", teamId: 100, champion: "Vi" },
+      { pid: 8, puuid: "zed", teamId: 200, champion: "Zed" },
+    ],
+    frames: [
+      {
+        t: 11 * 60_000,
+        pos: { "1": { x: 5000, y: 5000 }, "2": o.ally === false ? { x: 1000, y: 1000 } : { x: 5300, y: 5200 }, "8": { x: 5600, y: 5000 } },
+        gold: { "1": 6000, "2": 6000, "8": 7000 },
+        level: { "1": o.meLvl, "2": o.meLvl, "8": o.zedLvl },
+        cur: { "1": o.gold ?? 300 },
+      },
+    ],
+    kills: [{ t: 12 * 60_000, pos: { x: 5000, y: 5000 }, killer: 8, victim: 1, assists: [] }],
+    objectives: o.dragonKilledAt ? [{ t: o.dragonKilledAt, kind: "DRAGON", team: 200 }] : [],
+    wards: [{ t: 11.5 * 60_000, pid: 1 }],
+  });
+
+  it("retard de 2 niveaux : cause principale « combat engagé », niveaux dans les faits", () => {
+    const ct = scene({ meLvl: 7, zedLvl: 9 });
+    const f = deathFacts(ct, "me", ct.kills[0]!);
+    expect(f.levels).toEqual({ me: 7, enemies: 9 });
+    const d = diagnoseDeath(f);
+    expect(d).toMatchObject({ kind: "MISTAKE", category: "ENGAGEMENT" });
+    expect(d.title).toMatch(/Combat engagé avec 2 niveaux de retard/);
+    expect(d.observations.join(" ")).toMatch(/Niveau 7 contre 9 en moyenne/);
+  });
+
+  it("or non dépensé : cause « ressources », et facteur aggravant quand une autre cause domine", () => {
+    let ct = scene({ meLvl: 8, zedLvl: 8, gold: 1850 });
+    let d = diagnoseDeath(deathFacts(ct, "me", ct.kills[0]!));
+    expect(d).toMatchObject({ category: "RESOURCES" });
+    expect(d.title).toMatch(/1 ?850 or non dépensé|1 850 or non dépensé/);
+    ct = scene({ meLvl: 7, zedLvl: 9, gold: 1850 });
+    d = diagnoseDeath(deathFacts(ct, "me", ct.kills[0]!));
+    expect(d.category).toBe("ENGAGEMENT");
+    expect(d.factors.join(" ")).toMatch(/or en poche/);
+    expect(d.interpretation).toMatch(/Facteurs aggravants : .*or en poche/);
+  });
+
+  it("minuteurs d'objectifs : dragon disponible, réapparition 5 min après une prise, Nashor à 20:00", () => {
+    const ct = scene({ meLvl: 8, zedLvl: 8 });
+    expect(objectiveTimers(ct, 12 * 60_000)).toEqual([{ kind: "DRAGON", label: "le dragon", inSec: -420 }]);
+    const taken = scene({ meLvl: 8, zedLvl: 8, dragonKilledAt: 9 * 60_000 });
+    expect(objectiveTimers(taken, 12 * 60_000)).toEqual([]); // revient à 14:00
+    expect(objectiveTimers(taken, 13.5 * 60_000)).toEqual([{ kind: "DRAGON", label: "le dragon", inSec: 30 }]);
+    expect(objectiveTimers(taken, 19.5 * 60_000).map((o) => o.kind)).toEqual(["DRAGON", "BARON"]);
+  });
+});

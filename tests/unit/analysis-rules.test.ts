@@ -75,3 +75,35 @@ describe("règles d'analyse assistée", () => {
     expect(buildProposals(base([{ ...grey(null), startMs: 1000, endMs: 6000 }]), { durationMs: 30000, gameStartOffsetMs: null })).toEqual([]);
   });
 });
+
+import { guardReview } from "@/server/analysis/ai";
+
+describe("garde-fous de l'IA", () => {
+  const review = (evidence: { claim: string; source: string }[], confidence: "LOW" | "MEDIUM" = "MEDIUM") =>
+    ({ evidence, confidence, causes: ["a", "b", "c", "d"], uncertainties: [] }) as never;
+  it("rejette les preuves qui citent une image inexistante et abaisse la confiance sans 2 preuves", () => {
+    const g = guardReview(review([{ claim: "x", source: "Image 2" }, { claim: "y", source: "image 12" }, { claim: "z", source: "minimap" }]), 6, false);
+    expect(g.evidence.map((e) => e.source)).toEqual(["image 2"]);
+    expect(g.rejected).toBe(2); // image 12 et minimap absente
+    expect(g.confidence).toBe("LOW");
+    expect(g.causes).toHaveLength(3);
+    expect(guardReview(review([{ claim: "x", source: "image 1" }, { claim: "y", source: "faits" }]), 6, false).confidence).toBe("MEDIUM");
+  });
+});
+
+import { gameReportRules, recurringPatterns } from "@/server/analysis/ai";
+
+describe("bilan expert : erreurs récurrentes", () => {
+  const m = (flags: string[], category = "POSITIONING") => ({ title: "Mort", kind: "MISTAKE", category, advice: "", decisionMs: 1000, automatic: true, flags });
+  it("repère les facteurs présents dans au moins 2 moments, du plus fréquent au moins fréquent", () => {
+    const r = recurringPatterns([m(["isolated", "gold"]), m(["isolated"]), m(["gold", "isolated"]), m(["level"])]);
+    expect(r.map((x) => [x.flag, x.n])).toEqual([["isolated", 3], ["gold", 2]]);
+  });
+  it("la priorité n°1 du bilan traite l'erreur la plus récurrente", () => {
+    const rep = gameReportRules([m(["level"], "ENGAGEMENT"), m(["blind"], "VISION"), m(["blind"], "VISION"), m(["blind"], "VISION")]);
+    expect(rep.patterns[0]).toBe("3 morts sans balise dans la moitié adverse");
+    expect(rep.priorities[0]!.title).toBe("Vision et minimap");
+    expect(rep.priorities[0]!.why).toMatch(/Erreur récurrente mesurée/);
+    expect(rep.summary).toMatch(/Erreur qui revient le plus : 3 morts sans balise/);
+  });
+});

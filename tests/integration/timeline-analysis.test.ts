@@ -154,6 +154,10 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const note = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note;
     expect(note).toMatch(/liée à la partie.*Synchronisée automatiquement : 2 mort/);
     expect(await prisma.recommendation.count({ where: { recordingId: id, analysisVersion: "riot-timeline-1.0.0" } })).toBe(2);
+    // Bilan expert : les deux morts sont « isolé face à 2 ennemis » → erreur récurrente en tête
+    const report = (await prisma.recording.findUniqueOrThrow({ where: { id } })).gameReport as { patterns: string[]; priorities: { title: string }[] };
+    expect(report.patterns[0]).toBe("2 morts isolé face à plusieurs ennemis");
+    expect(report.priorities[0]!.title).toBe("Placement");
   }, 240_000);
   it("synchro réglée fausse : corrigée avec 3 morts concordantes, simple avertissement avec 2", async () => {
     // Vidéo de 70 s avec trois écrans grisés (13, 33, 53 s) ; morts de la partie à 0:11, 0:31, 0:51 → bon décalage : 2 s.

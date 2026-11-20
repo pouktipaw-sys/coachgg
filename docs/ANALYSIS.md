@@ -126,3 +126,19 @@ Pour chaque mort (et chaque moment « absent »), les trajets estimés des joueu
 précèdent. Ce sont des annotations « trajet horodaté » (`geometry.times`, un point par seconde, positions interpolées
 entre les repères de la timeline) ; le lecteur web et l'export vidéo utilisent le même calcul (`timedProgress`).
 Dans le récap et les exports, elles apparaissent dans la minimap agrandie.
+
+## IA experte (v2)
+
+**Faits experts mesurés (sans clé IA)** : niveaux (toi et moyenne des ennemis impliqués), or non dépensé à la dernière
+minute, durée de la mort, état du dragon et du Nashor (disponibles ou dans la minute, d'après les prises précédentes).
+
+**Diagnostic** : une cause principale (échange, objectif perdu, retard de 2 niveaux, isolé, sans vision, infériorité,
+or non dépensé) et la liste des **facteurs aggravants** mesurés. Chaque mort enregistre ses facteurs (`flags`).
+
+**Claude (si clé)** : méthode de coach (grille vague / vision / rapport de force / sorts visibles / position, puis faits
+mesurés, puis 1 à 3 causes classées), preuves citées pour chaque affirmation (« image n », « minimap », « faits »),
+incertitudes déclarées. Garde-fous dans le code : preuves citant une image inexistante rejetées, confiance « moyenne »
+seulement avec 2 preuves valides, cause mesurée par la timeline prioritaire sur celle de l'IA.
+
+**Bilan** : erreurs récurrentes mesurées (facteur présent dans au moins 2 moments) en tête ; la priorité n°1 en traite une.
+Avec Claude, il reçoit les facteurs et faits de chaque moment.

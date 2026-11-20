@@ -1,7 +1,7 @@
 // Transforme une mort réelle (timeline Riot) en moment de coaching : diagnostic chiffré et
 // schéma sur la minimap (position de la mort, ennemis, alliés, direction de repli).
 import type { Proposal } from "./rules";
-import { diagnoseDeath, toMinimap, type Absence, type DeathFacts, type Trail } from "@/lib/riot/timelineFacts";
+import { deathFlags, diagnoseDeath, toMinimap, type Absence, type DeathFacts, type Trail } from "@/lib/riot/timelineFacts";
 
 export const TIMELINE_VERSION = "riot-timeline-1.0.0";
 
@@ -58,7 +58,7 @@ export function timelineProposal(f: DeathFacts, opts: { deathVideoMs: number; du
       clipId: null,
     },
     annotations,
-    evidence: { type: "riot_death", deathVideoMs: death, facts: { ...f, enemies: f.enemies.map((e) => e.champion) } },
+    evidence: { type: "riot_death", deathVideoMs: death, flags: deathFlags(f), facts: { ...f, enemies: f.enemies.map((e) => e.champion) } },
     sheet: null,
   };
 }
@@ -102,7 +102,7 @@ export function absenceProposal(a: Absence, opts: { videoMs: number; durationMs:
       clipId: null,
     },
     annotations,
-    evidence: { type: "riot_absence", eventVideoMs: v, absence: { kind: a.kind, distance: a.distance, estimated: a.estimated } },
+    evidence: { type: "riot_absence", eventVideoMs: v, flags: [a.kind === "FIGHT" ? "absent_fight" : "absent_objective"], absence: { kind: a.kind, distance: a.distance, estimated: a.estimated } },
     sheet: null,
   };
 }

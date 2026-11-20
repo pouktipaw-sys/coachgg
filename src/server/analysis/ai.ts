@@ -34,7 +34,7 @@ export async function aiSpentThisMonthMicros(now = new Date()) {
   return (jobs._sum.costMicros ?? 0) + (coach._sum.costMicros ?? 0);
 }
 /** Coût maximal estimé d'un moment, pour ne jamais dépasser le budget (prudent). */
-export const AI_MOMENT_RESERVE_MICROS = 80_000;
+export const AI_MOMENT_RESERVE_MICROS = 120_000; // ~4 500 tokens envoyés + jusqu'à 4 500 générés (grille, causes, preuves)
 const FRAMES = 6;
 
 export const aiModel = () => process.env.ANALYSIS_MODEL?.trim() || "claude-opus-5-5";
@@ -51,6 +51,20 @@ export const MomentReviewSchema = z.object({
   kind: z.enum(["MISTAKE", "INTERESTING"]).describe("MISTAKE uniquement si une décision évitable est visible"),
   category: z.enum(CATEGORIES),
   observations: z.array(z.string()).describe("2 à 5 faits visibles, chacun préfixé par « Image n : »"),
+  checklist: z
+    .object({
+      wave: z.string().describe("État de la vague de sbires visible (poussée, gelée, absente, non visible)"),
+      vision: z.string().describe("Vision : balises visibles, zones sombres, ennemis manquants sur la minimap"),
+      numbers: z.string().describe("Rapport de force visible : alliés et ennemis proches"),
+      cooldowns: z.string().describe("Sorts et Flash visibles sur l'interface (disponibles ou non), « non visible » sinon"),
+      position: z.string().describe("Position par rapport aux tours, à la rivière et aux murs"),
+    })
+    .describe("Grille de lecture d'un coach, remplie uniquement avec ce qui est visible ou fourni"),
+  causes: z.array(z.string()).describe("Causes probables de la mort, de la plus à la moins importante (1 à 3)"),
+  evidence: z
+    .array(z.object({ claim: z.string(), source: z.string().describe("« image n », « minimap » ou « faits »") }))
+    .describe("Preuve de chaque affirmation importante : d'où vient-elle ?"),
+  uncertainties: z.array(z.string()).describe("Ce que tu ne peux pas savoir à partir des images et des faits"),
   interpretation: z.string(),
   alternative: z
     .object({ label: z.string(), conditions: z.string(), limits: z.string() })
@@ -71,7 +85,14 @@ export const MomentReviewSchema = z.object({
 });
 export type MomentReview = z.infer<typeof MomentReviewSchema>;
 
-const SYSTEM = `Tu es un coach de League of Legends. Tu analyses des images extraites de l'enregistrement vidéo d'une partie (vue du joueur), prises dans les secondes qui précèdent une mort probable détectée automatiquement (écran grisé).
+const SYSTEM = `Tu es un coach de League of Legends de haut niveau. Tu analyses des images extraites de l'enregistrement vidéo d'une partie (vue du joueur), prises dans les secondes qui précèdent une mort, et des faits mesurés par la timeline officielle Riot quand ils sont fournis.
+
+Méthode (comme un coach) :
+1. Remplis la grille : vague de sbires, vision et ennemis manquants, rapport de force, sorts visibles, position (tours, rivière, murs).
+2. Croise avec les faits mesurés (tueur, niveaux, or non dépensé, objectifs, alliés à portée) : ils font foi.
+3. Classe 1 à 3 causes, de la plus importante à la moins importante. La cause principale doit expliquer la mort, pas seulement l'accompagner.
+4. Propose UNE alternative réaliste au moment de la décision, et un conseil réutilisable dans les parties suivantes.
+5. Justifie chaque affirmation importante dans « evidence » (source : « image n », « minimap » ou « faits ») et liste ce que tu ne peux pas savoir dans « uncertainties ».
 
 Règles :
 - Décris uniquement ce qui est visible sur les images. N'invente ni champion, ni sort, ni position que tu ne vois pas. Si c'est incertain, dis-le.
@@ -192,8 +213,35 @@ const clamp = (v: number) => Math.min(1, Math.max(0, v));
 const cp = (p: { x: number; y: number }) => ({ x: clamp(p.x), y: clamp(p.y) });
 
 /** Remplace une proposition par règles par l'analyse de l'IA (schéma + conseil). */
-export function proposalFromReview(base: Proposal, r: MomentReview, times: number[], model: string, durationMs: number): Proposal | null {
+/**
+ * Garde-fous appliqués à la réponse de l'IA (indépendants du modèle) :
+ * • preuves citant une image inexistante rejetées ; • confiance « moyenne » seulement avec au moins
+ *   2 preuves valides ; • causes et incertitudes limitées à 3 et 4.
+ */
+export function guardReview(r: MomentReview, imageCount: number, hasMinimap: boolean) {
+  const valid: MomentReview["evidence"] = [];
+  let rejected = 0;
+  for (const e of r.evidence ?? []) {
+    const src = e.source.toLowerCase().trim();
+    const m = /^image\s*(\d+)$/.exec(src);
+    const ok = (m && Number(m[1]) >= 1 && Number(m[1]) <= imageCount) || (src === "minimap" && hasMinimap) || src === "faits";
+    if (ok) valid.push({ claim: e.claim.slice(0, 300), source: src });
+    else rejected++;
+  }
+  const confidence: "LOW" | "MEDIUM" = r.confidence === "MEDIUM" && valid.length >= 2 ? "MEDIUM" : "LOW";
+  return {
+    evidence: valid.slice(0, 8),
+    rejected,
+    confidence,
+    confidenceNote: "Confiance abaissée : moins de 2 preuves vérifiables.",
+    causes: (r.causes ?? []).slice(0, 3).map((c) => c.slice(0, 200)),
+    uncertainties: (r.uncertainties ?? []).slice(0, 4).map((u) => u.slice(0, 200)),
+  };
+}
+
+export function proposalFromReview(base: Proposal, r: MomentReview, times: number[], model: string, durationMs: number, opts: { hasMinimap?: boolean } = {}): Proposal | null {
   if (!r.readable) return null;
+  const g = guardReview(r, times.length, !!opts.hasMinimap);
   const idx = Math.min(times.length, Math.max(1, r.decisionImage)) - 1;
   const decisionMs = Math.max(base.recommendation.contextStartMs + 500, Math.min(times[idx]!, base.recommendation.endMs - 500));
   const slowdownStartMs = Math.max(base.recommendation.contextStartMs, decisionMs - 2500);
@@ -219,14 +267,21 @@ export function proposalFromReview(base: Proposal, r: MomentReview, times: numbe
       slowdownStartMs,
       decisionMs,
       observations: r.observations.slice(0, 5).map((o) => o.slice(0, 400)),
-      interpretation: r.interpretation.slice(0, 1500),
+      interpretation: [
+        r.interpretation.slice(0, 1200),
+        g.causes.length ? `Causes (par ordre d'importance) : ${g.causes.join(" ; ")}.` : "",
+        g.uncertainties.length ? `Incertitudes : ${g.uncertainties.join(" ; ")}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 2000),
       alternatives: r.alternative ? [r.alternative] : [],
-      confidence: r.confidence,
-      confidenceReason: r.confidenceReason.slice(0, 500),
+      confidence: g.confidence,
+      confidenceReason: (g.confidence !== r.confidence ? `${g.confidenceNote} ` : "") + r.confidenceReason.slice(0, 400),
       advice: r.advice.slice(0, 500),
     },
     annotations,
-    evidence: { ...base.evidence, ai: { version: AI_VERSION, model, frames: times } },
+    evidence: { ...base.evidence, ai: { version: AI_VERSION, model, frames: times, checklist: r.checklist, evidence: g.evidence, rejected: g.rejected } },
     sheet: base.sheet,
   };
 }
@@ -241,14 +296,39 @@ export const GameReportSchema = z.object({
 });
 export type GameReport = z.infer<typeof GameReportSchema> & { source: "ai" | "rules"; model?: string; moments: number; deaths: number; generatedAt: string };
 
-type MomentLite = { title: string; kind: string; category: string; advice: string; decisionMs: number; automatic: boolean };
+type MomentLite = { title: string; kind: string; category: string; advice: string; decisionMs: number; automatic: boolean; flags?: string[]; facts?: string[] };
 
-const REPORT_SYSTEM = `Tu es un coach de League of Legends. À partir de la liste des moments analysés d'une partie (titres, catégories, conseils, horodatages) et de statistiques éventuelles, rédige un bilan court, bienveillant et concret, en français, au tutoiement. N'invente rien qui ne soit pas dans les données. Les moments marqués « à vérifier » sont des propositions automatiques non confirmées : formule-les avec prudence.`;
+/** Erreurs récurrentes mesurées (facteurs présents dans au moins 2 moments), de la plus fréquente à la moins fréquente. */
+const FLAG_PATTERN: Record<string, { text: (n: number) => string; category: string }> = {
+  isolated: { text: (n) => `${n} morts isolé face à plusieurs ennemis`, category: "POSITIONING" },
+  level: { text: (n) => `${n} combats engagés avec 2 niveaux de retard ou plus`, category: "ENGAGEMENT" },
+  blind: { text: (n) => `${n} morts sans balise dans la moitié adverse`, category: "VISION" },
+  outnumbered: { text: (n) => `${n} combats en infériorité numérique`, category: "ENGAGEMENT" },
+  gold: { text: (n) => `${n} morts avec plus de 1 500 or non dépensé`, category: "RESOURCES" },
+  objective_lost: { text: (n) => `${n} morts juste avant un objectif perdu`, category: "ROTATIONS" },
+  absent_fight: { text: (n) => `${n} combats perdus pendant que tu étais loin`, category: "ROTATIONS" },
+  absent_objective: { text: (n) => `${n} objectifs pris par l'ennemi pendant que tu étais loin`, category: "ROTATIONS" },
+};
+
+export function recurringPatterns(moments: { flags?: string[] }[]) {
+  const counts = new Map<string, number>();
+  for (const m of moments) for (const f of new Set(m.flags ?? [])) if (FLAG_PATTERN[f]) counts.set(f, (counts.get(f) ?? 0) + 1);
+  return [...counts.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([flag, n]) => ({ flag, n, text: FLAG_PATTERN[flag]!.text(n), category: FLAG_PATTERN[flag]!.category }));
+}
+
+const REPORT_SYSTEM = `Tu es un coach de League of Legends de haut niveau. À partir de la liste des moments analysés d'une partie (titres, catégories, conseils, horodatages, facteurs et faits mesurés par la timeline Riot) et de statistiques éventuelles, rédige un bilan court, bienveillant et concret, en français, au tutoiement. Repère d'abord les erreurs qui se répètent (facteurs présents dans plusieurs moments) : ce sont elles qui coûtent le plus de parties, et la priorité n°1 doit en traiter une. N'invente rien qui ne soit pas dans les données. Les moments marqués « à vérifier » sont des propositions automatiques non confirmées : formule-les avec prudence.`;
 
 export async function gameReportAi(moments: MomentLite[], stats: string | null, client: AiClient = new Anthropic()) {
   const text = [
     `Moments analysés (${moments.length}) :`,
-    ...moments.map((m) => `- ${formatMs(m.decisionMs)} · ${m.category} · ${m.title}${m.automatic ? " (à vérifier)" : ""} — conseil : ${m.advice || "—"}`),
+    ...moments.map(
+      (m) =>
+        `- ${formatMs(m.decisionMs)} · ${m.category} · ${m.title}${m.automatic ? " (à vérifier)" : ""} — conseil : ${m.advice || "—"}${m.flags?.length ? ` — facteurs mesurés : ${m.flags.join(", ")}` : ""}${m.facts?.length ? `\n  faits : ${m.facts.join(" ")}` : ""}`,
+    ),
+    ...(recurringPatterns(moments).length ? [`Erreurs récurrentes mesurées : ${recurringPatterns(moments).map((r) => r.text).join(" ; ")}.`] : []),
     stats ? `Statistiques du match : ${stats}` : "Pas de statistiques de match liées.",
   ].join("\n");
   const response = await client.beta.messages.parse({
@@ -281,18 +361,26 @@ export function gameReportRules(moments: MomentLite[]): z.infer<typeof GameRepor
   const deaths = moments.filter((m) => m.kind === "MISTAKE" || /mort/i.test(m.title)).length;
   const counts = new Map<string, number>();
   for (const m of moments) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  // Les erreurs récurrentes mesurées passent devant le simple décompte par catégorie.
+  const recurring = recurringPatterns(moments);
+  const byPattern = [...new Set(recurring.map((r) => r.category))];
+  const top = [...byPattern, ...[...counts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c).filter((c) => !byPattern.includes(c))];
   const order = [...top, ...Object.keys(CATEGORY_ADVICE).filter((c) => !top.includes(c))].filter((c) => CATEGORY_ADVICE[c]).slice(0, 3);
-  const priorities = order.map((c) => ({
-    title: CATEGORY_ADVICE[c]!.title,
-    why: counts.get(c) ? `${counts.get(c)} moment(s) de la partie concernent ce point.` : "Point général, aucun moment détecté ne le concerne directement.",
-    drill: CATEGORY_ADVICE[c]!.drill,
-  }));
+  const priorities = order.map((c) => {
+    const rec = recurring.find((r) => r.category === c);
+    return {
+      title: CATEGORY_ADVICE[c]!.title,
+      why: rec ? `Erreur récurrente mesurée : ${rec.text}.` : counts.get(c) ? `${counts.get(c)} moment(s) de la partie concernent ce point.` : "Point général, aucun moment détecté ne le concerne directement.",
+      drill: CATEGORY_ADVICE[c]!.drill,
+    };
+  });
   return {
     summary: moments.length
-      ? `${moments.length} moment(s) à revoir dans cette partie, dont ${deaths} mort(s) probable(s). Bilan établi à partir des détections automatiques (sans IA) : revois chaque clip pour confirmer.`
+      ? `${moments.length} moment(s) à revoir dans cette partie, dont ${deaths} mort(s) probable(s).${recurring.length ? ` Erreur qui revient le plus : ${recurring[0]!.text}.` : ""} Bilan établi sans IA, à partir des détections et des faits de la partie : revois chaque clip pour confirmer.`
       : "Aucun moment marquant n'a été détecté automatiquement dans cette vidéo.",
-    patterns: top.slice(0, 2).filter((c) => (counts.get(c) ?? 0) >= 2).map((c) => `${CATEGORY_ADVICE[c]?.title ?? c} : ${counts.get(c)} moments`),
+    patterns: recurring.length
+      ? recurring.slice(0, 3).map((r) => r.text)
+      : top.slice(0, 2).filter((c) => (counts.get(c) ?? 0) >= 2).map((c) => `${CATEGORY_ADVICE[c]?.title ?? c} : ${counts.get(c)} moments`),
     priorities,
     nextGameGoal: deaths ? `Finir la prochaine partie avec moins de ${Math.max(1, deaths)} mort(s) évitable(s) en suivant la priorité n°1.` : "Revoir la vidéo de la prochaine partie et marquer toi-même 2 moments à analyser.",
   };

@@ -271,12 +271,20 @@ export async function analyzeRecording(job: AnalysisJob) {
               aiDeps.client(),
             );
             costMicros += r.costMicros;
-            const replaced = proposalFromReview(p, r.review, r.times, r.model, rec.durationMs!);
+            const replaced = proposalFromReview(p, r.review, r.times, r.model, rec.durationMs!, { hasMinimap: !!minimap });
             if (replaced) {
               if ((p.evidence as { type?: string }).type === "riot_death") {
                 // Les faits mesurés restent en tête ; le schéma minimap (positions réelles) est conservé.
-                replaced.recommendation.observations = [...p.recommendation.observations.slice(0, 3), ...replaced.recommendation.observations].slice(0, 7);
+                replaced.recommendation.observations = [...p.recommendation.observations.slice(0, 4), ...replaced.recommendation.observations].slice(0, 9);
                 replaced.annotations = [...p.annotations, ...replaced.annotations];
+                // Cause mesurée prioritaire : l'IA ne peut pas la contredire, elle l'explique avec les images.
+                if (p.recommendation.kind === "MISTAKE") {
+                  replaced.recommendation.title = p.recommendation.title;
+                  replaced.recommendation.kind = p.recommendation.kind;
+                  replaced.recommendation.category = p.recommendation.category;
+                  replaced.recommendation.interpretation = `${p.recommendation.interpretation} Lecture des images : ${replaced.recommendation.interpretation}`.slice(0, 2500);
+                  replaced.recommendation.confidence = "MEDIUM"; // cause mesurée par la timeline
+                }
               }
               proposals[i] = replaced;
               ok++;
@@ -407,9 +415,18 @@ export async function analyzeRecording(job: AnalysisJob) {
       const moments = await prisma.recommendation.findMany({
         where: { recordingId: rec.id, status: { not: "REJECTED" } },
         orderBy: { decisionMs: "asc" },
-        select: { title: true, kind: true, category: true, advice: true, decisionMs: true, provenance: true, status: true },
+        select: { title: true, kind: true, category: true, advice: true, decisionMs: true, provenance: true, status: true, autoEvidence: true, observations: { select: { text: true }, take: 4, orderBy: { createdAt: "asc" } } },
       });
-      const lite = moments.map((m) => ({ title: m.title, kind: m.kind, category: m.category, advice: m.advice, decisionMs: m.decisionMs, automatic: m.provenance === "AUTOMATIC" && m.status === "DRAFT" }));
+      const lite = moments.map((m) => ({
+        title: m.title,
+        kind: m.kind,
+        category: m.category,
+        advice: m.advice,
+        decisionMs: m.decisionMs,
+        automatic: m.provenance === "AUTOMATIC" && m.status === "DRAFT",
+        flags: (m.autoEvidence as { flags?: string[] } | null)?.flags ?? [],
+        facts: m.observations.map((o) => o.text),
+      }));
       const deaths = moments.filter((m) => /mort|écran grisé/i.test(m.title)).length;
       let body = gameReportRules(lite);
       let source: GameReport["source"] = "rules";

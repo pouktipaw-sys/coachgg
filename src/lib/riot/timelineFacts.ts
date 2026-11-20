@@ -10,7 +10,7 @@ export const FOUNTAIN: Record<number, Pos> = { 100: { x: 400, y: 400 }, 200: { x
 export type CompactTimeline = {
   v: 1;
   participants: { pid: number; puuid: string; teamId: number; champion: string }[];
-  frames: { t: number; pos: Record<string, Pos>; gold: Record<string, number>; level?: Record<string, number> }[];
+  frames: { t: number; pos: Record<string, Pos>; gold: Record<string, number>; level?: Record<string, number>; cur?: Record<string, number> }[];
   kills: { t: number; pos: Pos; killer: number; victim: number; assists: number[] }[];
   objectives: { t: number; kind: "DRAGON" | "BARON" | "HERALD" | "GRUBS" | "ATAKHAN" | "TOWER" | "INHIBITOR" | "OTHER"; team: number }[];
   wards: { t: number; pid: number }[];
@@ -31,7 +31,7 @@ type RawEvent = {
 };
 type RawTimeline = {
   metadata: { participants: string[] };
-  info: { frames: { timestamp: number; events: RawEvent[]; participantFrames?: Record<string, { position?: Pos; totalGold?: number; level?: number }> }[] };
+  info: { frames: { timestamp: number; events: RawEvent[]; participantFrames?: Record<string, { position?: Pos; totalGold?: number; level?: number; currentGold?: number }> }[] };
 };
 
 const MONSTERS: Record<string, CompactTimeline["objectives"][number]["kind"]> = {
@@ -50,12 +50,14 @@ export function compactTimeline(t: RawTimeline, players: { puuid: string; teamId
     const pos: Record<string, Pos> = {};
     const gold: Record<string, number> = {};
     const level: Record<string, number> = {};
+    const cur: Record<string, number> = {};
     for (const [pid, pf] of Object.entries(f.participantFrames ?? {})) {
       if (pf.position) pos[pid] = { x: pf.position.x, y: pf.position.y };
       if (pf.totalGold != null) gold[pid] = pf.totalGold;
       if (pf.level != null) level[pid] = pf.level;
+      if (pf.currentGold != null) cur[pid] = pf.currentGold;
     }
-    out.frames.push({ t: f.timestamp, pos, gold, level });
+    out.frames.push({ t: f.timestamp, pos, gold, level, cur });
     for (const e of f.events) {
       if (e.type === "CHAMPION_KILL" && e.position && e.victimId)
         out.kills.push({ t: e.timestamp, pos: e.position, killer: e.killerId ?? 0, victim: e.victimId, assists: e.assistingParticipantIds ?? [] });
@@ -170,6 +172,14 @@ export type DeathFacts = {
   objectiveLost: { kind: string; label: string; after: number } | null;
   goldDiff: number | null;
   safePoint: Pos;
+  /** Niveaux : le tien et la moyenne des ennemis impliqués (dernière minute connue). */
+  levels: { me: number; enemies: number | null };
+  /** Or non dépensé à la dernière minute connue avant la mort (null si inconnu). */
+  unspentGold: number | null;
+  /** Durée estimée de la mort (s) : ce qu'elle a coûté en temps hors de la carte. */
+  deathTimerSec: number;
+  /** Dragon / Nashor disponibles ou sur le point de l'être (dans les 60 s) au moment de la mort. */
+  objectivesUp: { kind: "DRAGON" | "BARON"; label: string; inSec: number }[];
   /** Dernier moment pour reculer : quand le premier ennemi impliqué arrive à portée (temps de jeu). */
   decision: { t: number; basis: "approach" | "already_close" | "default"; enemy: string | null; distance: number | null };
 };
@@ -242,14 +252,38 @@ export function deathFacts(ct: CompactTimeline, puuid: string, death: CompactTim
     goldDiff: frame ? goldOf(me.teamId) - goldOf(me.teamId === 100 ? 200 : 100) : null,
     safePoint: { x: death.pos.x + ((fountain.x - death.pos.x) / len) * step, y: death.pos.y + ((fountain.y - death.pos.y) / len) * step },
     decision: decisionPoint(ct, me.pid, death, enemyIds),
+    levels: {
+      me: levelAt(ct, me.pid, death.t),
+      enemies: enemyIds.length ? Math.round((enemyIds.reduce((s, pid) => s + levelAt(ct, pid, death.t), 0) / enemyIds.length) * 10) / 10 : null,
+    },
+    unspentGold: frame?.cur?.[String(me.pid)] ?? null,
+    deathTimerSec: Math.round(deathTimerMs(ct, me.pid, death.t) / 1000),
+    objectivesUp: objectiveTimers(ct, death.t),
   };
+}
+
+// Apparitions (temps de jeu) : dragon à 5:00 puis 5 min après chaque prise ; Nashor à 20:00 puis 6 min après.
+const SPAWN = { DRAGON: { first: 5 * 60_000, respawn: 5 * 60_000 }, BARON: { first: 20 * 60_000, respawn: 6 * 60_000 } } as const;
+
+/** Objectifs majeurs disponibles (inSec ≤ 0) ou qui apparaissent dans la minute, à l'instant t. */
+export function objectiveTimers(ct: CompactTimeline, t: number): DeathFacts["objectivesUp"] {
+  const out: DeathFacts["objectivesUp"] = [];
+  for (const kind of ["DRAGON", "BARON"] as const) {
+    const last = [...ct.objectives].reverse().find((o) => o.kind === kind && o.t <= t);
+    const spawn = last ? last.t + SPAWN[kind].respawn : SPAWN[kind].first;
+    const inSec = Math.round((spawn - t) / 1000);
+    if (inSec <= 60) out.push({ kind, label: kind === "DRAGON" ? "le dragon" : "le Nashor", inSec });
+  }
+  return out;
 }
 
 const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
 
 export type DeathDiagnosis = {
   kind: "MISTAKE" | "INTERESTING";
-  category: "POSITIONING" | "VISION" | "ROTATIONS" | "ENGAGEMENT";
+  category: "POSITIONING" | "VISION" | "ROTATIONS" | "ENGAGEMENT" | "RESOURCES";
+  /** Facteurs aggravants mesurés, en plus de la cause principale. */
+  factors: string[];
   title: string;
   observations: string[];
   interpretation: string;
@@ -260,66 +294,102 @@ export type DeathDiagnosis = {
 /** Diagnostic expliqué d'une mort, fondé uniquement sur les faits mesurés de la timeline. */
 export function diagnoseDeath(f: DeathFacts): DeathDiagnosis {
   const at = mmss(f.t);
+  const n = (x: number) => x.toLocaleString("fr-FR");
   const obs: string[] = [];
   obs.push(
     `${at} (jeu) : tué${f.killer ? ` par ${f.killer}` : ""}${f.enemiesInvolved > 1 ? `, ${f.enemiesInvolved} ennemis impliqués (${f.enemies.map((e) => e.champion).join(", ")})` : ""}.`,
   );
   obs.push(
     f.alliesNear.length
-      ? `Alliés à portée (moins de 2 500 unités, positions estimées) : ${f.alliesNear.map((a) => `${a.champion} à ${a.distance}`).join(", ")}.`
-      : `Aucun allié à portée${f.nearestAlly ? ` : le plus proche, ${f.nearestAlly.champion}, était à environ ${f.nearestAlly.distance} unités (position estimée)` : ""}.`,
+      ? `Alliés à portée (moins de 2 500 unités, positions estimées) : ${f.alliesNear.map((a) => `${a.champion} à ${n(a.distance)}`).join(", ")}.`
+      : `Aucun allié à portée${f.nearestAlly ? ` : le plus proche, ${f.nearestAlly.champion}, était à environ ${n(f.nearestAlly.distance)} unités (position estimée)` : ""}.`,
   );
   if (f.decision.basis === "approach")
     obs.push(`${mmss(f.decision.t + 1000)} : ${f.decision.enemy} arrive à moins de 1 400 unités (positions estimées) — c'était le dernier moment pour reculer.`);
   else if (f.decision.basis === "already_close")
     obs.push(`${f.decision.enemy} était déjà à moins de 1 400 unités plus de 10 s avant la mort (positions estimées) : la position était dangereuse depuis longtemps.`);
+  const levelGap = f.levels.enemies != null ? Math.round((f.levels.enemies - f.levels.me) * 10) / 10 : 0;
+  if (f.levels.enemies != null) obs.push(`Niveau ${f.levels.me} contre ${String(f.levels.enemies).replace(".", ",")} en moyenne pour les ennemis impliqués${levelGap >= 1 ? ` (${String(levelGap).replace(".", ",")} de retard)` : ""}.`);
   obs.push(f.wardsLast3min ? `${f.wardsLast3min} balise(s) posée(s) par toi dans les 3 minutes avant.` : "Aucune balise posée par toi dans les 3 minutes avant.");
+  if (f.unspentGold != null && f.unspentGold >= 1200) obs.push(`${n(f.unspentGold)} or non dépensé à la dernière minute avant la mort : un retour à la base t'aurait donné un objet.`);
   if (f.enemyHalf) obs.push("Mort dans la moitié adverse de la carte.");
+  for (const o of f.objectivesUp) obs.push(o.inSec <= 0 ? `${o.label[0]!.toUpperCase()}${o.label.slice(1)} était disponible.` : `${o.label[0]!.toUpperCase()}${o.label.slice(1)} apparaissait dans ${o.inSec} s.`);
   if (f.objectiveLost) obs.push(`L'équipe adverse prend ${f.objectiveLost.label} ${f.objectiveLost.after} s après ta mort.`);
   if (f.tradedBack) obs.push(`${f.killer} meurt à son tour dans les 15 secondes : échange.`);
-  if (f.goldDiff != null) obs.push(`Écart d'or de ton équipe à ce moment : ${f.goldDiff >= 0 ? "+" : ""}${f.goldDiff}.`);
+  if (f.deathTimerSec >= 25) obs.push(`Mort coûteuse : environ ${f.deathTimerSec} s hors de la carte.`);
+  if (f.goldDiff != null) obs.push(`Écart d'or de ton équipe à ce moment : ${f.goldDiff >= 0 ? "+" : ""}${n(f.goldDiff)}.`);
 
   const isolated = f.alliesNear.length === 0 && f.enemiesInvolved >= 2;
   const outnumbered = f.alliesNear.length > 0 && f.enemiesInvolved > f.alliesNear.length + 1;
   const blind = f.enemyHalf && f.wardsLast3min === 0;
+  const underLevel = levelGap >= 2;
+  const richDeath = f.unspentGold != null && f.unspentGold >= 1500;
+
+  // Facteurs aggravants (en plus de la cause principale retenue ci-dessous).
+  const all: { key: string; text: string }[] = [];
+  if (isolated) all.push({ key: "isolated", text: `isolé face à ${f.enemiesInvolved} ennemis` });
+  if (underLevel) all.push({ key: "level", text: `${String(levelGap).replace(".", ",")} niveaux de retard` });
+  if (blind) all.push({ key: "blind", text: "sans balise dans la moitié adverse" });
+  if (outnumbered) all.push({ key: "outnumbered", text: `en infériorité (${f.alliesNear.length + 1} contre ${f.enemiesInvolved})` });
+  if (richDeath) all.push({ key: "gold", text: `${n(f.unspentGold!)} or en poche` });
+  if (f.objectivesUp.length && !f.objectiveLost) all.push({ key: "objective", text: `${f.objectivesUp[0]!.label} ${f.objectivesUp[0]!.inSec <= 0 ? "disponible" : "bientôt là"}` });
+  const factorsExcept = (k: string) => all.filter((x) => x.key !== k).map((x) => x.text);
+  const withFactors = (txt: string, k: string) => {
+    const f2 = factorsExcept(k);
+    return f2.length ? `${txt} Facteurs aggravants : ${f2.join(", ")}.` : txt;
+  };
 
   if (f.tradedBack && !f.objectiveLost)
     return {
-      kind: "INTERESTING", category: "ENGAGEMENT", title: `Échange à ${at} : mort, mais ${f.killer} tombe aussi`,
+      kind: "INTERESTING", category: "ENGAGEMENT", title: `Échange à ${at} : mort, mais ${f.killer} tombe aussi`, factors: factorsExcept("trade"),
       observations: obs, interpretation: "Mort suivie de celle de ton adversaire : un échange, pas forcément une erreur. Vérifie s'il était favorable (or, objectif, temps de réapparition).",
       alternative: null, advice: "Avant un échange, vérifie que tu y gagnes : un objectif à prendre ou un adversaire plus important que toi.",
     };
   if (f.objectiveLost)
     return {
-      kind: "MISTAKE", category: "ROTATIONS", title: `Mort ${f.objectiveLost.after} s avant que l'ennemi prenne ${f.objectiveLost.label}`,
-      observations: obs, interpretation: `Ta mort a laissé ton équipe en infériorité numérique juste avant ${f.objectiveLost.label} : c'est souvent là que la partie bascule.`,
+      kind: "MISTAKE", category: "ROTATIONS", title: `Mort ${f.objectiveLost.after} s avant que l'ennemi prenne ${f.objectiveLost.label}`, factors: factorsExcept("objective"),
+      observations: obs, interpretation: withFactors(`Ta mort a laissé ton équipe en infériorité numérique juste avant ${f.objectiveLost.label} : c'est souvent là que la partie bascule.`, "objective"),
       alternative: { label: `Rester en vie et en groupe avant ${f.objectiveLost.label}`, conditions: "dans la minute qui précède l'apparition ou la prise d'un objectif", limits: "l'objectif aurait pu être perdu quand même si l'ennemi avait l'avantage" },
       advice: "Une minute avant un objectif, joue la sécurité : pas d'avancée seul, regroupe-toi et prépare la vision autour.",
     };
+  if (underLevel && !isolated)
+    return {
+      kind: "MISTAKE", category: "ENGAGEMENT", title: `Combat engagé avec ${String(levelGap).replace(".", ",")} niveaux de retard à ${at}`, factors: factorsExcept("level"),
+      observations: obs, interpretation: withFactors(`Les ennemis impliqués avaient en moyenne ${String(levelGap).replace(".", ",")} niveaux d'avance : un sort de plus et plus de statistiques, le combat était perdu d'avance sans gros avantage.`, "level"),
+      alternative: { label: "Éviter le combat et rattraper l'écart (farm, expérience)", conditions: "quand tu as 2 niveaux ou plus de retard sur ton adversaire", limits: "un allié en avance peut compenser l'écart" },
+      advice: "Avant un duel, compare les niveaux (au-dessus des barres de vie) : avec 2 niveaux de retard, ne prends pas le combat.",
+    };
   if (isolated)
     return {
-      kind: "MISTAKE", category: "POSITIONING", title: `Mort isolé face à ${f.enemiesInvolved} ennemis à ${at}`,
-      observations: obs, interpretation: `Aucun allié ne pouvait t'aider${f.nearestAlly ? ` (le plus proche à ~${f.nearestAlly.distance} unités)` : ""} alors que ${f.enemiesInvolved} ennemis sont venus : la position était perdue avant le combat.`,
-      alternative: { label: "Reculer vers ton équipe ou ta tour avant le combat", conditions: blind ? "surtout sans vision dans cette zone" : "quand plusieurs ennemis ne sont pas visibles sur la minimap", limits: "positions des alliés estimées à la minute près" },
+      kind: "MISTAKE", category: "POSITIONING", title: `Mort isolé face à ${f.enemiesInvolved} ennemis à ${at}`, factors: factorsExcept("isolated"),
+      observations: obs, interpretation: withFactors(`Aucun allié ne pouvait t'aider${f.nearestAlly ? ` (le plus proche à ~${n(f.nearestAlly.distance)} unités)` : ""} alors que ${f.enemiesInvolved} ennemis sont venus : la position était perdue avant le combat.`, "isolated"),
+      alternative: { label: "Reculer vers ton équipe ou ta tour avant le combat", conditions: blind ? "surtout sans vision dans cette zone" : "quand plusieurs ennemis ne sont pas visibles sur la minimap", limits: "positions des alliés estimées" },
       advice: blind ? "Ne t'avance pas dans la moitié adverse sans balise ni allié à portée : recule dès que 2 ennemis manquent sur la minimap." : "Quand tu es seul, compte les ennemis visibles sur la minimap : s'il en manque 2, recule vers ton équipe.",
     };
   if (blind)
     return {
-      kind: "MISTAKE", category: "VISION", title: `Mort sans vision dans le camp adverse à ${at}`,
-      observations: obs, interpretation: "Tu étais dans la moitié adverse sans avoir posé de balise : les ennemis te voyaient avant que tu les voies.",
+      kind: "MISTAKE", category: "VISION", title: `Mort sans vision dans le camp adverse à ${at}`, factors: factorsExcept("blind"),
+      observations: obs, interpretation: withFactors("Tu étais dans la moitié adverse sans avoir posé de balise : les ennemis te voyaient avant que tu les voies.", "blind"),
       alternative: { label: "Poser une balise avant d'entrer dans la zone", conditions: "quand tu traverses la rivière ou entres dans la jungle adverse", limits: "la balise n'empêche pas tout, mais elle te prévient" },
       advice: "Pose ta balise AVANT d'entrer dans une zone sombre, et achète une balise de contrôle à chaque retour.",
     };
   if (outnumbered)
     return {
-      kind: "MISTAKE", category: "ENGAGEMENT", title: `Combat en infériorité à ${at} (${f.alliesNear.length + 1} contre ${f.enemiesInvolved})`,
-      observations: obs, interpretation: "Ton équipe s'est battue en nombre inférieur : sauf grosse avance, ce combat était difficile à gagner.",
-      alternative: { label: "Attendre le regroupement avant d'engager", conditions: "quand un ou plusieurs alliés sont encore en chemin", limits: "positions estimées à la minute près" },
+      kind: "MISTAKE", category: "ENGAGEMENT", title: `Combat en infériorité à ${at} (${f.alliesNear.length + 1} contre ${f.enemiesInvolved})`, factors: factorsExcept("outnumbered"),
+      observations: obs, interpretation: withFactors("Ton équipe s'est battue en nombre inférieur : sauf grosse avance, ce combat était difficile à gagner.", "outnumbered"),
+      alternative: { label: "Attendre le regroupement avant d'engager", conditions: "quand un ou plusieurs alliés sont encore en chemin", limits: "positions estimées" },
       advice: "Avant d'engager, compte : vous devez être au moins autant que l'ennemi, ou avoir un gros avantage.",
     };
+  if (richDeath)
+    return {
+      kind: "MISTAKE", category: "RESOURCES", title: `Mort avec ${n(f.unspentGold!)} or non dépensé à ${at}`, factors: factorsExcept("gold"),
+      observations: obs, interpretation: withFactors("Tu te battais sans avoir converti ton or en objets : tu étais plus faible que ce que ta partie permettait.", "gold"),
+      alternative: { label: "Rentrer acheter avant de te battre", conditions: "dès que tu as de quoi acheter un composant important (environ 1 300 or ou plus)", limits: "rentrer coûte aussi du temps et des sbires" },
+      advice: "Avec plus de 1 300 or en poche, cherche le bon moment pour rentrer (vague poussée, ennemi absent) avant le prochain combat.",
+    };
   return {
-    kind: "INTERESTING", category: "POSITIONING", title: `Mort à ${at}${f.killer ? ` contre ${f.killer}` : ""}`,
-    observations: obs, interpretation: "Aucun schéma d'erreur évident dans les données : revois la vidéo pour juger le placement et le timing.",
+    kind: "INTERESTING", category: "POSITIONING", title: `Mort à ${at}${f.killer ? ` contre ${f.killer}` : ""}`, factors: all.map((x) => x.text),
+    observations: obs, interpretation: all.length ? `Pas de cause unique évidente. Points à surveiller : ${all.map((x) => x.text).join(", ")}.` : "Aucun schéma d'erreur évident dans les données : revois la vidéo pour juger le placement et le timing.",
     alternative: null, advice: "Revois les 10 secondes avant la mort : où étaient tes alliés, et quelle information te manquait ?",
   };
 }
@@ -464,4 +534,20 @@ export function deathTrailPlayers(ct: CompactTimeline, puuid: string, death: Com
     ...enemies.map((pid) => ({ pid, style: "enemy" as const, label: ct.participants.find((x) => x.pid === pid)!.champion })),
     ...facts.alliesNear.map((a) => byChamp(a.champion)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ pid: x.pid, style: "ally" as const, label: x.champion })),
   ];
+}
+
+export type DeathFlag = "isolated" | "level" | "blind" | "outnumbered" | "gold" | "objective_lost" | "trade";
+
+/** Facteurs mesurés d'une mort (clés stables), pour repérer les erreurs qui se répètent dans une partie. */
+export function deathFlags(f: DeathFacts): DeathFlag[] {
+  const levelGap = f.levels.enemies != null ? f.levels.enemies - f.levels.me : 0;
+  const flags: DeathFlag[] = [];
+  if (f.alliesNear.length === 0 && f.enemiesInvolved >= 2) flags.push("isolated");
+  if (levelGap >= 2) flags.push("level");
+  if (f.enemyHalf && f.wardsLast3min === 0) flags.push("blind");
+  if (f.alliesNear.length > 0 && f.enemiesInvolved > f.alliesNear.length + 1) flags.push("outnumbered");
+  if (f.unspentGold != null && f.unspentGold >= 1500) flags.push("gold");
+  if (f.objectiveLost) flags.push("objective_lost");
+  if (f.tradedBack) flags.push("trade");
+  return flags;
 }

@@ -62,7 +62,7 @@ async function main() {
         system: MOMENT_SYSTEM(),
         messages: [{ role: "user", content: momentContent(images, times, { deathMs: 30_000, gameStartOffsetMs: null, ruleObservations: ["(exemple)"] }) as Anthropic.ContentBlockParam[] }],
       });
-      input = r.input_tokens + 700; // + schéma de sortie structurée (estimation)
+      input = r.input_tokens + 1200; // + schéma de sortie structurée (grille, causes, preuves) — estimation
     } catch (e) {
       if (e instanceof Anthropic.AuthenticationError) console.log("❌ Clé refusée par Anthropic (invalide ou révoquée).");
       else if (e instanceof Anthropic.PermissionDeniedError) console.log("❌ Clé valide mais sans accès à ce modèle.");
@@ -71,8 +71,8 @@ async function main() {
       process.exit(1);
     }
     console.log(`✅ Clé valide · modèle ${aiModel()}`);
-    const low = Math.round(input * PRICE.in + 1200 * PRICE.out);
-    const high = Math.round(input * PRICE.in + 3500 * PRICE.out);
+    const low = Math.round(input * PRICE.in + 1800 * PRICE.out);
+    const high = Math.round(input * PRICE.in + 4500 * PRICE.out);
     console.log(`Par mort analysée : ${input} tokens envoyés (6 images) → coût estimé ${usd(low)} à ${usd(high)}`);
     const perVideo = aiMaxMoments();
     console.log(`Par vidéo (${perVideo} mort(s) max + bilan) : jusqu'à ~${usd(high * perVideo + 80_000)}`);
