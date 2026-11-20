@@ -15,6 +15,7 @@ import { formatMs } from "@/lib/annotations/coaching";
 import { CONFIDENCE_LABELS } from "@/lib/annotations/schema";
 import { planSegments, type Segment } from "@/lib/analysis/recapPlan";
 import { momentChips } from "@/lib/analysis/chips";
+import { pickMoments, severity } from "@/lib/analysis/severity";
 import type { GameReport } from "./analysis/ai";
 
 const MAX_MOMENTS = 12;
@@ -48,12 +49,13 @@ export async function renderRecap(job: AnalysisJob) {
   const R = rec; // non nul (vérifié ci-dessus), utilisable dans les fonctions internes
   await prisma.recording.update({ where: { id: rec.id }, data: { recapStatus: "RUNNING", recapError: null } });
 
-  const moments = await prisma.recommendation.findMany({
+  const all = await prisma.recommendation.findMany({
     where: { recordingId: rec.id, status: { not: "REJECTED" } },
     include: { observations: { orderBy: { createdAt: "asc" }, take: 4 }, annotations: true },
     orderBy: { decisionMs: "asc" },
-    take: MAX_MOMENTS,
   });
+  // Trop de moments : on garde les plus graves (objectif perdu, combat perdu sans toi…), dans l'ordre chronologique.
+  const moments = pickMoments(all, MAX_MOMENTS);
   if (!moments.length) throw new PermanentJobError("Aucun moment à monter.");
   const report = rec.gameReport as GameReport | null;
   const footer = `CoachGG · récap · ${rec.title}`.slice(0, 90);
@@ -69,6 +71,8 @@ export async function renderRecap(job: AnalysisJob) {
   const KIND_COLOR: Record<string, number[]> = { MISTAKE: [240, 82, 82], GOOD_ACTION: [49, 196, 141], DEATH: [240, 82, 82], FIGHT: [255, 138, 76], MISSED_OPPORTUNITY: [251, 191, 36] };
   const KIND_FR: Record<string, string> = { MISTAKE: "Décision à revoir", GOOD_ACTION: "Bonne action", OBJECTIVE: "Objectif", FIGHT: "Combat", MISSED_OPPORTUNITY: "Occasion manquée", INTERESTING: "À revoir", DEATH: "Mort" };
 
+  // Les 3 erreurs les plus coûteuses (annoncées en ouverture), si elles sont réellement des erreurs.
+  const costly = [...moments].filter((m) => m.kind === "MISTAKE" || m.kind === "MISSED_OPPORTUNITY").sort((a, b) => severity(b) - severity(a)).slice(0, 3);
   // Extraits sans répétition : les moments qui se chevauchent partagent un seul extrait.
   const segments = planSegments(moments, { maxSegmentMs: MAX_SEGMENT_MS, durationMs: rec.durationMs ?? Number.MAX_SAFE_INTEGER });
   const items: object[] = [
@@ -79,7 +83,8 @@ export async function renderRecap(job: AnalysisJob) {
       subtitle: `${moments.length} moment(s) à revoir · ${ai ? "analysés par l'IA (Claude)" : measured ? "faits mesurés par la timeline Riot" : "détection automatique et tes annotations"}`,
       sections: [
         ...(gameLine ? [{ label: "La partie", color: [49, 196, 141], lines: [gameLine] }] : []),
-        { label: "Au programme", lines: moments.slice(0, 6).map((m, i) => `${i + 1}. ${formatMs(m.decisionMs)} — ${m.title}`) },
+        ...(costly.length ? [{ label: "Les erreurs les plus coûteuses", color: [240, 82, 82], lines: costly.map((m) => `${formatMs(m.decisionMs)} — ${m.title}`) }] : []),
+        { label: all.length > moments.length ? `Au programme (${moments.length} sur ${all.length}, les plus importants)` : "Au programme", lines: moments.slice(0, costly.length ? 4 : 6).map((m, i) => `${i + 1}. ${formatMs(m.decisionMs)} — ${m.title}`) },
       ],
       footer,
     },

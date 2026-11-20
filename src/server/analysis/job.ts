@@ -190,6 +190,7 @@ export async function analyzeRecording(job: AnalysisJob) {
 
     // 8 a. Timeline Riot : morts réelles du joueur, faits mesurés et schéma minimap (vidéo liée et synchronisée).
     const extraDeaths: { type: "grey_screen"; startMs: number; endMs: number }[] = [];
+    const falseGrey: number[] = []; // écrans grisés démentis par la timeline (temps vidéo)
     const absenceClips: { kind: "MISSED_OPPORTUNITY"; title: string; startMs: number; endMs: number; eventMs: number }[] = [];
     await step("Timeline Riot (morts et positions réelles)", async () => {
       if (!rec.matchId) return { value: 0, status: "skipped", note: "Vidéo non liée à un match." };
@@ -217,6 +218,13 @@ export async function analyzeRecording(job: AnalysisJob) {
         proposals.push(p);
         added++;
       }
+      // Écrans grisés sans mort réelle correspondante : fausses détections (chargement, effet visuel…), écartées.
+      for (let i = proposals.length - 1; i >= 0; i--) {
+        const x = proposals[i]!;
+        if ((x.evidence as { type?: string }).type !== "grey_screen") continue;
+        falseGrey.push(x.recommendation.decisionMs + 2000);
+        proposals.splice(i, 1);
+      }
       // Mauvais moments sans mort : combat perdu ou objectif pris pendant que le joueur était loin.
       let missed = 0;
       for (const a of absences(ct, me.puuid)) {
@@ -231,7 +239,7 @@ export async function analyzeRecording(job: AnalysisJob) {
       proposals.sort((a, b) => a.recommendation.decisionMs - b.recommendation.decisionMs);
       return {
         value: added + missed,
-        note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image) ; ${missed} moment(s) sans mort (combat perdu ou objectif raté loin de toi)${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.`,
+        note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image${falseGrey.length ? `, ${falseGrey.length} fausse(s) détection(s) d'écran grisé écartée(s)` : ""}) ; ${missed} moment(s) sans mort (combat perdu ou objectif raté loin de toi)${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.`,
       };
     });
 
@@ -396,7 +404,12 @@ export async function analyzeRecording(job: AnalysisJob) {
       const kept = await prisma.clip.findMany({ where: { recordingId: rec.id }, select: { kind: true, startMs: true, endMs: true } });
       // Les moments « absent » (rotations ratées, mesurées par la timeline) sont découpés avec les morts.
       const wanted: { kind: "DEATH" | "FIGHT" | "MISSED_OPPORTUNITY"; title: string; startMs: number; endMs: number; eventMs: number }[] = [
-        ...autoClipsFrom([...out.events, ...extraDeaths], rec.durationMs!, rec.gameStartOffsetMs, { ...choice, contextSec }),
+        ...autoClipsFrom(
+          [...out.events.filter((e) => !(e.type === "grey_screen" && falseGrey.some((f) => Math.abs(f - e.startMs) <= 2500))), ...extraDeaths],
+          rec.durationMs!,
+          rec.gameStartOffsetMs,
+          { ...choice, contextSec },
+        ),
         ...(choice.deaths ? absenceClips : []),
       ];
       // Un clip conservé (favori, annoté, exporté, ou manuel) qui contient déjà l'événement suffit.

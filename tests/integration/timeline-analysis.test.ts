@@ -196,4 +196,33 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect(warned.rec.gameStartOffsetMs).toBe(12_000); // pas de correction avec seulement 2 morts
     expect(warned.note).toMatch(/semble décalée d'environ 10,\d s/);
   }, 400_000);
+  it("écran grisé sans mort réelle dans la timeline : fausse détection écartée (ni moment ni clip)", async () => {
+    // two-deaths.mp4 : écrans grisés à 13 s et 33 s ; la partie ne compte qu'une mort (0:11 → 13 s avec 2 s de décalage).
+    const u = await makeUser("Eve");
+    await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Me", tagLine: "EUW", platform: "EUW1", puuid: "ME" } });
+    const tl = structuredClone(timeline);
+    tl.metadata.matchId = "EUW1_903";
+    (tl.info.frames[0]!.events as object[]).splice(0, Infinity, { type: "CHAMPION_KILL", timestamp: 11_000, position: { x: 7000, y: 7000 }, killerId: 6, victimId: 1, assistingParticipantIds: [] });
+    const client = new RiotClient("k", async (url: string) => {
+      if (url.includes("/EUW1_903/timeline")) return new Response(JSON.stringify(tl), { status: 200 });
+      if (url.includes("/ids?")) return new Response(JSON.stringify(["EUW1_903"]), { status: 200 });
+      if (url.includes("/matches/EUW1_903")) return new Response(JSON.stringify({ ...match, metadata: { matchId: "EUW1_903" } }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    });
+    await importRecentMatches(u.id, 1, client);
+    const m = await prisma.match.findFirstOrThrow({ where: { riotMatchId: "EUW1_903" } });
+    const id = await uploadFile(u.id, "two-deaths.mp4");
+    await prisma.recording.update({ where: { id }, data: { matchId: m.id, gameStartOffsetMs: 2000 } });
+    await requestAnalysis(id, 10);
+    await drain();
+    const recs = await prisma.recommendation.findMany({ where: { recordingId: id, status: "DRAFT" } });
+    expect(recs.filter((r) => r.title.startsWith("Écran grisé"))).toHaveLength(0);
+    expect(recs.filter((r) => r.analysisVersion === "riot-timeline-1.0.0")).toHaveLength(1);
+    expect(await prisma.clip.count({ where: { recordingId: id, kind: "DEATH" } })).toBe(1);
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    const note = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!.note;
+    expect(note).toMatch(/1 fausse\(s\) détection\(s\) d'écran grisé écartée/);
+    // Les détections brutes restent enregistrées (mesure de précision)
+    expect((job.result as { detections: { type: string }[] }).detections.filter((d) => d.type === "grey_screen")).toHaveLength(2);
+  }, 300_000);
 });
