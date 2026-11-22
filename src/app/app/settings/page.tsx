@@ -1,6 +1,6 @@
 import { ActionButton } from "@/components/ActionButton";
 import { DeleteAccountForm, IdentityForm, ProfileForm } from "@/components/settings/ProfileForm";
-import { Badge, IntegrationNotice, PageHeader } from "@/components/ui";
+import { Badge, PageHeader } from "@/components/ui";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
 import { formatRank, type RankEntry } from "@/components/stats";
@@ -15,6 +15,7 @@ export default async function SettingsPage() {
     prisma.gameIdentity.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
   ]);
   const riot = integrationStatus().riotApi === "configured";
+  const mailer = integrationStatus().mailer;
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader title="Paramètres" subtitle={user.email} />
@@ -51,7 +52,7 @@ export default async function SettingsPage() {
         )}
         <IdentityForm />
         <p className="text-xs text-muted">
-          Vous pouvez associer plusieurs comptes (smurf, autre serveur…) : toutes leurs parties rejoignent votre historique, et le compte principal est celui affiché à vos amis.
+          Vous pouvez associer plusieurs comptes (smurf, autre serveur…) : toutes leurs parties rejoignent votre historique ; le tableau de bord permet de choisir le compte affiché (ou tous réunis), et le compte principal est celui affiché à vos amis.
         </p>
       </section>
 
@@ -81,10 +82,32 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      <IntegrationNotice title="Email">
-        L&apos;envoi d&apos;emails n&apos;est pas configuré dans cette version : les invitations sont des notifications internes et le lien de
-        réinitialisation n&apos;apparaît que dans les logs serveur en développement.
-      </IntegrationNotice>
+      <section className="card space-y-3" id="email">
+        <h2 className="h2 flex items-center gap-2">
+          Emails{" "}
+          {mailer === "configured" ? <Badge tone="ok">activés</Badge> : <Badge tone="warn">non configurés</Badge>}
+        </h2>
+        {mailer === "configured" ? (
+          <p className="text-sm text-muted">
+            Les invitations aux groupes et les liens de réinitialisation du mot de passe sont envoyés par email à <strong>{user.email}</strong>.
+          </p>
+        ) : (
+          <div className="space-y-2 text-sm text-muted">
+            <p>
+              Aucun serveur d&apos;envoi n&apos;est réglé : les invitations restent des notifications dans l&apos;appli et le lien de
+              réinitialisation n&apos;apparaît que dans la console du serveur{mailer === "console_dev_only" ? " (développement)" : ""}.
+            </p>
+            <p>
+              Pour activer les emails avec Gmail : crée un <strong>mot de passe d&apos;application</strong> (Compte Google → Sécurité →
+              Validation en deux étapes → Mots de passe des applications), puis ajoute dans <code>.env</code> :
+            </p>
+            <pre className="overflow-x-auto rounded bg-black/30 p-2 text-xs">{`SMTP_URL="smtps://ton.adresse%40gmail.com:motdepasseappli@smtp.gmail.com:465"
+MAIL_FROM="CoachGG <ton.adresse@gmail.com>"`}</pre>
+            <p className="text-xs">Le « @ » de l&apos;adresse s&apos;écrit %40 dans SMTP_URL. Redémarre ensuite le serveur.</p>
+          </div>
+        )}
+        <ActionButton url="/api/account/test-email" label="M'envoyer un email de test" done="Envoi demandé : regarde ta boîte mail (et les spams)." />
+      </section>
     </div>
   );
 }

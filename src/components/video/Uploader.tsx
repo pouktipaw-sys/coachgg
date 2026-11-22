@@ -117,7 +117,15 @@ export function Uploader({ matches, resume }: { matches: { id: string; label: st
       } else {
         const r = await api<{ id: string; chunkSize: number }>("/api/recordings", {
           method: "POST",
-          json: { filename: file.name, sizeBytes: file.size, mimeType: file.type, title, matchId: matchId || undefined },
+          json: {
+            filename: file.name,
+            sizeBytes: file.size,
+            mimeType: file.type,
+            title,
+            matchId: matchId || undefined,
+            // Fin d'enregistrement approximative : permet de retrouver la partie même si le fichier a été renommé.
+            fileModifiedAt: file.lastModified ? new Date(file.lastModified).toISOString() : undefined,
+          },
         });
         id = r.id;
         chunk = r.chunkSize;

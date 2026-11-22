@@ -18,7 +18,7 @@ import { requestRecap } from "../recap";
 import { ensureTimelineFacts } from "../riot/import";
 import { absences, deathFacts, deathTrailPlayers, myDeaths, trails } from "@/lib/riot/timelineFacts";
 import { TIMELINE_VERSION, absenceProposal, timelineProposal } from "@/lib/analysis/timelineProposals";
-import { alignOffset, checkOffset, parseRecordingDate, pickMatch } from "@/lib/analysis/autoSync";
+import { alignOffset, checkOffset, findMatchForRecording, recordingTimeHints } from "@/lib/analysis/autoSync";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
 type Step = { name: string; status: "ok" | "skipped" | "warning" | "failed"; ms: number; note?: string };
@@ -135,19 +135,28 @@ export async function analyzeRecording(job: AnalysisJob) {
     await step("Liaison et synchronisation automatiques", async () => {
       const notes: string[] = [];
       if (!rec.matchId) {
-        const recordedAt = rec.capturedAt ?? parseRecordingDate(rec.originalFilename) ?? parseRecordingDate(rec.title);
-        if (!recordedAt) return { value: null, status: "skipped", note: "Pas de date dans le nom du fichier : lie la vidéo à sa partie à la main." };
+        const hints = recordingTimeHints(rec);
+        if (!hints.length) return { value: null, status: "skipped", note: "Aucune date d'enregistrement connue : lie la vidéo à sa partie (encadré « Informations »)." };
         const candidates = await prisma.match.findMany({
           where: { source: "RIOT_API", gameStartAt: { not: null }, participants: { some: { userId: rec.ownerId } } },
           select: { id: true, gameStartAt: true, durationSec: true },
           orderBy: { gameStartAt: "desc" },
           take: 300,
         });
-        const m = pickMatch(candidates.map((c) => ({ id: c.id, startAt: c.gameStartAt!, durationSec: c.durationSec })), recordedAt);
-        if (!m) return { value: null, status: "skipped", note: `Aucune partie Riot importée autour du ${recordedAt.toLocaleString("fr-FR")}.` };
+        const found = findMatchForRecording(
+          candidates.map((c) => ({ id: c.id, startAt: c.gameStartAt!, durationSec: c.durationSec })),
+          hints,
+          rec.durationMs,
+        );
+        if (!found) {
+          const when = hints.map((h) => `${h.at.toLocaleString("fr-FR")} (${h.source})`).join(", ");
+          const why = candidates.length ? `aucune de tes ${candidates.length} partie(s) importée(s) ne correspond à : ${when}` : "aucune partie Riot importée (connecte ton compte Riot et synchronise tes parties)";
+          return { value: null, status: "skipped", note: `Liaison impossible : ${why}. Lie la vidéo à la main.` };
+        }
+        const m = found.match;
         await prisma.recording.update({ where: { id: rec.id }, data: { matchId: m.id } });
         Object.assign(rec, { matchId: m.id });
-        notes.push(`Vidéo liée à la partie du ${m.startAt.toLocaleString("fr-FR")} (date du fichier).`);
+        notes.push(`Vidéo liée à la partie du ${m.startAt.toLocaleString("fr-FR")} (${found.source}) — vérifie que c'est la bonne.`);
       }
       let status: "ok" | "warning" | "skipped" = "ok";
       if (rec.matchId) {
@@ -305,7 +314,8 @@ export async function analyzeRecording(job: AnalysisJob) {
           await prisma.analysisJob.update({ where: { id: job.id }, data: { costMicros: baseCost + costMicros } }).catch(() => {});
         }
         const note = `${ok}/${deaths.length} moment(s) analysé(s) par ${aiModel()} · coût estimé ${(costMicros / 1e6).toFixed(3)} $${errors.length ? ` · non analysés : ${[...new Set(errors)].join(" ; ")}` : ""}`;
-        return { value: ok, status: errors.length && !ok && deaths.length ? "warning" : "ok", note };
+        if (!deaths.length) return { value: 0, status: "skipped", note: "Aucune mort détectée à analyser : l'IA n'a pas été appelée (aucun coût)." };
+        return { value: ok, status: errors.length && !ok ? "warning" : "ok", note };
       });
     }
 
@@ -441,7 +451,7 @@ export async function analyzeRecording(job: AnalysisJob) {
         facts: m.observations.map((o) => o.text),
       }));
       const deaths = moments.filter((m) => /mort|écran grisé/i.test(m.title)).length;
-      let body = gameReportRules(lite);
+      let body = gameReportRules(lite, { linked: !!rec.matchId, minimap: !!minimap, videoMs: rec.durationMs });
       let source: GameReport["source"] = "rules";
       let model: string | undefined;
       const budget = aiBudgetMicros();

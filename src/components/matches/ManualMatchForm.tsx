@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, errorMessage } from "@/lib/client";
 import { MODE_LABELS, ROLE_LABELS } from "@/components/stats";
+import { ChampionInput } from "@/components/ChampionInput";
 
 type Row = {
   isMe: boolean;
@@ -151,7 +152,7 @@ export function ManualMatchForm({ identity, primaryRole }: { identity: { gameNam
                 <td className="p-1 whitespace-nowrap">{r.isMe ? <strong>Moi</strong> : `Joueur ${i + 1}`}</td>
                 <td className="p-1"><input className={cell} aria-label="Riot ID" value={r.riotGameName} onChange={(e) => upd(i, "riotGameName", e.target.value)} /></td>
                 <td className="p-1 w-16"><input className={cell} aria-label="Tag" value={r.riotTagLine} onChange={(e) => upd(i, "riotTagLine", e.target.value)} /></td>
-                <td className="p-1"><input className={cell} aria-label="Champion" value={r.championName} onChange={(e) => upd(i, "championName", e.target.value)} required /></td>
+                <td className="p-1"><ChampionInput className={cell} aria-label="Champion" value={r.championName} onChange={(v) => upd(i, "championName", v)} required /></td>
                 <td className="p-1">
                   <select className={cell} aria-label="Rôle" value={r.role} onChange={(e) => upd(i, "role", e.target.value)}>
                     <option value="">?</option>

@@ -359,6 +359,10 @@ model Recording {
   deviceId        String?
   device          Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   capturedAt      DateTime?
+  // Date de dernière modification du fichier sur l'ordinateur (≈ fin de l'enregistrement) : liaison auto
+  fileModifiedAt  DateTime?
+  // Date de création inscrite dans le conteneur vidéo (MP4/MKV), si plausible
+  mediaCreatedAt  DateTime?
   clientUploadId  String? // clé d'idempotence fournie par l'appareil
   // Fin d'analyse : bilan écrit de la partie et vidéo récap (moments annotés enchaînés)
   gameReport      Json?

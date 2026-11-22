@@ -22,6 +22,45 @@ export function pickMatch<T extends { id: string; startAt: Date; durationSec: nu
   return fits.sort((a, b) => Math.abs(a.startAt.getTime() - t) - Math.abs(b.startAt.getTime() - t))[0] ?? null;
 }
 
+export type RecordingDates = {
+  capturedAt?: Date | null;
+  originalFilename?: string | null;
+  title?: string | null;
+  mediaCreatedAt?: Date | null;
+  fileModifiedAt?: Date | null;
+};
+
+/**
+ * Indices de l'heure d'enregistrement, du plus fiable au moins fiable :
+ * appareil → nom du fichier → date inscrite dans la vidéo → date de modification du fichier.
+ */
+export function recordingTimeHints(r: RecordingDates): { at: Date; source: string }[] {
+  const hints: { at: Date; source: string }[] = [];
+  const push = (at: Date | null | undefined, source: string) => {
+    if (at && Number.isFinite(at.getTime())) hints.push({ at, source });
+  };
+  push(r.capturedAt, "heure de capture");
+  push(r.originalFilename ? parseRecordingDate(r.originalFilename) : null, "date dans le nom du fichier");
+  push(r.title ? parseRecordingDate(r.title) : null, "date dans le titre");
+  push(r.mediaCreatedAt, "date inscrite dans la vidéo");
+  push(r.fileModifiedAt, "date de modification du fichier");
+  return hints;
+}
+
+/** Première partie trouvée en suivant les indices dans l'ordre ; la vidéo ne peut pas durer plus que la partie + 10 min. */
+export function findMatchForRecording<T extends { id: string; startAt: Date; durationSec: number }>(
+  matches: T[],
+  hints: { at: Date; source: string }[],
+  videoDurationMs: number | null,
+): { match: T; source: string } | null {
+  for (const h of hints) {
+    const fits = matches.filter((m) => videoDurationMs == null || videoDurationMs <= (m.durationSec + 600) * 1000);
+    const m = pickMatch(fits, h.at);
+    if (m) return { match: m, source: h.source };
+  }
+  return null;
+}
+
 /** Concordance d'un décalage donné : morts appariées à ±tol ms et écart moyen (ms). */
 export function checkOffset(videoDeathsMs: number[], gameDeathsMs: number[], offsetMs: number, tolMs = 1500) {
   const used = new Set<number>();

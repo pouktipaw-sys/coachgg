@@ -51,3 +51,27 @@ describe("vérification d'une synchro", () => {
     expect(Math.abs(r.offsetMs - 5050)).toBeLessThanOrEqual(60);
   });
 });
+
+describe("indices de date d'enregistrement", async () => {
+  const { recordingTimeHints, findMatchForRecording } = await import("@/lib/analysis/autoSync");
+  const start = new Date("2026-11-20T18:00:00Z");
+  const matches = [
+    { id: "a", startAt: start, durationSec: 1800 },
+    { id: "b", startAt: new Date("2026-11-20T20:00:00Z"), durationSec: 1500 },
+  ];
+  it("ordre de fiabilité : nom du fichier avant date de modification", () => {
+    const hints = recordingTimeHints({ originalFilename: "game.mp4", fileModifiedAt: new Date("2026-11-20T18:31:00Z"), mediaCreatedAt: null });
+    expect(hints.map((h) => h.source)).toEqual(["date de modification du fichier"]);
+    expect(findMatchForRecording(matches, hints, 1_700_000)?.match.id).toBe("a");
+  });
+  it("refuse une partie plus courte que la vidéo, et une date hors de toute partie", () => {
+    const hints = [{ at: new Date("2026-11-20T20:20:00Z"), source: "x" }];
+    expect(findMatchForRecording(matches, hints, 1_500_000)?.match.id).toBe("b");
+    expect(findMatchForRecording(matches, hints, 3_000_000)).toBeNull();
+    expect(findMatchForRecording(matches, [{ at: new Date("2026-11-21T10:00:00Z"), source: "x" }], null)).toBeNull();
+  });
+  it("passe à l'indice suivant si le premier ne trouve rien", () => {
+    const r = findMatchForRecording(matches, [{ at: new Date("2025-01-01"), source: "nom" }, { at: new Date("2026-11-20T20:10:00Z"), source: "modif" }], null);
+    expect(r).toMatchObject({ match: { id: "b" }, source: "modif" });
+  });
+});

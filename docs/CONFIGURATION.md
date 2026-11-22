@@ -36,6 +36,15 @@ Toutes les variables sont lues côté serveur. Copiez `.env.example` en `.env`. 
 ### Email — SMTP
 `src/server/mailer.ts` envoie via SMTP (nodemailer) quand `SMTP_URL` est défini : récupération de mot de passe, invitations à un groupe (comptes existants et personnes sans compte). Sans `SMTP_URL` : en développement les messages sont écrits dans les logs serveur ; en production rien n'est envoyé (avertissement dans les logs). Un échec SMTP ne fait jamais échouer l'action.
 
+Paramètres → **Emails** affiche l'état réel et propose **« M'envoyer un email de test »** (1 par minute). Exemple avec Gmail
+(mot de passe d'application obligatoire : Compte Google → Sécurité → Validation en deux étapes → Mots de passe des applications) :
+
+```
+SMTP_URL="smtps://ton.adresse%40gmail.com:motdepasseappli@smtp.gmail.com:465"
+MAIL_FROM="CoachGG <ton.adresse@gmail.com>"
+```
+Le « @ » de l'adresse s'écrit `%40` dans l'URL. Redémarrer le serveur après modification.
+
 Invitation d'une personne sans compte : un jeton aléatoire (stocké haché, valable 14 jours, à usage unique) est envoyé par email. À l'inscription avec **la même adresse** et ce lien, il devient une invitation normale que la personne accepte ou refuse. Le jeton prouve la possession de l'adresse ; une inscription avec une autre adresse ne reçoit rien. La réponse à l'inviteur est identique dans tous les cas (pas de révélation de l'existence d'un compte).
 
 ### Stockage objet — optionnel

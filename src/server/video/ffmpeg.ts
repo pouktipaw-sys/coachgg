@@ -11,7 +11,18 @@ export type ProbeResult = {
   videoCodec: string;
   audioCodec: string | null;
   formatName: string;
+  /** Date de création inscrite dans le conteneur (tag creation_time), si plausible. */
+  createdAt: Date | null;
 };
+
+/** Tag creation_time du conteneur → date, en écartant les valeurs par défaut (1904/1970) et le futur. */
+export function parseCreationTime(tag: string | undefined, now = Date.now()): Date | null {
+  if (!tag) return null;
+  const d = new Date(tag);
+  const t = d.getTime();
+  if (!Number.isFinite(t) || d.getUTCFullYear() < 2015 || t > now + 86400_000) return null;
+  return d;
+}
 
 export class MediaError extends Error {}
 
@@ -66,7 +77,7 @@ export async function probe(file: string): Promise<ProbeResult> {
   }
   const data = JSON.parse(out) as {
     streams?: { codec_type: string; codec_name: string; width?: number; height?: number; avg_frame_rate?: string; duration?: string }[];
-    format?: { duration?: string; format_name?: string };
+    format?: { duration?: string; format_name?: string; tags?: Record<string, string> };
   };
   const video = data.streams?.find((s) => s.codec_type === "video");
   const audio = data.streams?.find((s) => s.codec_type === "audio");
@@ -81,6 +92,7 @@ export async function probe(file: string): Promise<ProbeResult> {
     videoCodec: video.codec_name,
     audioCodec: audio?.codec_name ?? null,
     formatName: data.format?.format_name ?? "",
+    createdAt: parseCreationTime(data.format?.tags?.creation_time ?? data.format?.tags?.CREATION_TIME),
   };
 }
 

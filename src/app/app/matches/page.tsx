@@ -6,6 +6,7 @@ import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
 import { prisma } from "@/server/db";
 import { autoSyncIfDue, syncStatuses } from "@/server/riot/import";
 import { RiotSyncStatus } from "@/components/riot/RiotSyncStatus";
+import { ChampionInput } from "@/components/ChampionInput";
 
 export const metadata = { title: "Matchs & statistiques" };
 
@@ -47,7 +48,7 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
           <option value="30d">30 jours</option>
           <option value="90d">90 jours</option>
         </select>
-        <input name="champion" defaultValue={f.champion} placeholder="Champion" className="input" aria-label="Champion" />
+        <ChampionInput name="champion" defaultValue={f.champion} placeholder="Champion" aria-label="Champion" />
         <select name="role" defaultValue={f.role ?? ""} className="input" aria-label="Rôle">
           <option value="">Tous rôles</option>
           {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

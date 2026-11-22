@@ -5,7 +5,7 @@ import { integrationStatus } from "@/lib/env";
 import { requirePageUser } from "@/server/auth/page";
 import { autoSyncIfDue } from "@/server/riot/import";
 import { prisma } from "@/server/db";
-import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
+import { accountParticipantWhere, listUserMatches, parseMatchFilters } from "@/server/matches/queries";
 import { goalProgress } from "@/server/goals";
 import { COMPONENT_LABELS, CURRENT_SCORE_CONFIG, type ComponentKey } from "@/lib/scoring/config";
 import { formatMs } from "@/lib/annotations/coaching";
@@ -13,13 +13,18 @@ import { KIND_LABELS } from "@/lib/annotations/schema";
 
 export const metadata = { title: "Tableau de bord" };
 
-export default async function Dashboard() {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requirePageUser();
+  const sp = await searchParams;
   await autoSyncIfDue(user.id).catch(() => null);
-  const [profile, identity, matches, recordings, moments, goal, teams, jobs, scores] = await Promise.all([
+  // Plusieurs comptes Riot : le tableau de bord suit le compte choisi (principal par défaut), ou tous réunis.
+  const accounts = await prisma.gameIdentity.findMany({ where: { userId: user.id }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] });
+  const allAccounts = sp.account === "all" && accounts.length > 1;
+  const identity = allAccounts ? null : accounts.find((a) => a.id === sp.account) ?? accounts[0] ?? null;
+  const accountFilter = accounts.length > 1 && identity ? accountParticipantWhere(identity) : {};
+  const [profile, matches, recordings, moments, goal, teams, jobs, scores] = await Promise.all([
     prisma.playerProfile.findUnique({ where: { userId: user.id } }),
-    prisma.gameIdentity.findFirst({ where: { userId: user.id, isPrimary: true } }),
-    listUserMatches(user.id, parseMatchFilters({}), 20),
+    listUserMatches(user.id, parseMatchFilters({ account: accounts.length > 1 && identity ? identity.id : undefined }), 20),
     prisma.recording.findMany({ where: { ownerId: user.id }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.recommendation.findMany({
       where: { recording: { ownerId: user.id }, status: { in: ["PUBLISHED", "DISPUTED"] } },
@@ -31,7 +36,7 @@ export default async function Dashboard() {
     prisma.team.findMany({ where: { memberships: { some: { userId: user.id } } }, select: { id: true, name: true, _count: { select: { reports: true } } } }),
     prisma.analysisJob.groupBy({ by: ["status"], where: { recording: { ownerId: user.id }, status: { in: ["PENDING", "RUNNING", "FAILED"] } }, _count: { _all: true } }),
     prisma.performanceScore.findMany({
-      where: { scoreVersionId: CURRENT_SCORE_CONFIG.version, overall: { not: null }, participant: { userId: user.id, match: { isDemo: false } } },
+      where: { scoreVersionId: CURRENT_SCORE_CONFIG.version, overall: { not: null }, participant: { userId: user.id, ...accountFilter, match: { isDemo: false } } },
       include: { participant: { select: { match: { select: { gameStartAt: true, createdAt: true } } } } },
     }),
   ]);
@@ -68,10 +73,10 @@ export default async function Dashboard() {
         title={`Bonjour ${user.displayName}`}
         subtitle={
           <span>
-            {identity ? `${identity.gameName}#${identity.tagLine} · ${identity.platform} (déclaré)` : <Link className="underline" href="/app/settings#identite">Associer un Riot ID</Link>}
+            {allAccounts ? `${accounts.length} comptes Riot réunis` : identity ? `${identity.gameName}#${identity.tagLine} · ${identity.platform} (déclaré)` : <Link className="underline" href="/app/settings#identite">Associer un Riot ID</Link>}
             {profile?.primaryRole ? ` · ${ROLE_LABELS[profile.primaryRole]}` : ""}
-            {" · "}
-            {Array.isArray(identity?.rank) && (identity!.rank as RankEntry[]).length
+            {allAccounts ? "" : " · "}
+            {allAccounts ? null : Array.isArray(identity?.rank) && (identity!.rank as RankEntry[]).length
               ? (identity!.rank as RankEntry[]).map(formatRank).join(" · ")
               : integrationStatus().riotApi === "configured"
                 ? "Rang : à récupérer dans Paramètres"
@@ -85,6 +90,29 @@ export default async function Dashboard() {
           </>
         }
       />
+
+      {accounts.length > 1 && (
+        <nav aria-label="Compte Riot affiché" className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">Compte affiché :</span>
+          {accounts.map((a) => (
+            <Link
+              key={a.id}
+              href={`/app?account=${a.id}`}
+              aria-current={!allAccounts && identity?.id === a.id ? "page" : undefined}
+              className={`rounded-full border px-3 py-1 ${!allAccounts && identity?.id === a.id ? "border-accent bg-accent/15 text-text" : "border-line text-muted hover:text-text"}`}
+            >
+              {a.gameName}#{a.tagLine}
+            </Link>
+          ))}
+          <Link
+            href="/app?account=all"
+            aria-current={allAccounts ? "page" : undefined}
+            className={`rounded-full border px-3 py-1 ${allAccounts ? "border-accent bg-accent/15 text-text" : "border-line text-muted hover:text-text"}`}
+          >
+            Tous les comptes
+          </Link>
+        </nav>
+      )}
 
       {!profile?.onboardingCompletedAt && (
         <div className="card border-accent/40">
@@ -142,13 +170,14 @@ export default async function Dashboard() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card">
-          <div className="flex items-center justify-between"><h2 className="h2">Dernières parties</h2><Link className="text-sm underline" href="/app/matches">Historique</Link></div>
+          <div className="flex items-center justify-between"><h2 className="h2">Dernières parties</h2><Link className="text-sm underline" href={identity && accounts.length > 1 ? `/app/matches?account=${identity.id}` : "/app/matches"}>Historique</Link></div>
           {matches.length === 0 ? <div className="mt-3"><EmptyState title="Aucune partie" /></div> : (
             <ul className="mt-2 divide-y divide-line text-sm">
               {matches.slice(0, 5).map((m) => (
                 <li key={m.id} className="flex items-center justify-between py-2">
                   <Link className="hover:underline" href={`/app/matches/${m.id}`}>
                     <span className={m.me.win ? "text-win" : "text-loss"}>{m.me.win ? "V" : "D"}</span> · {m.me.championName} · {m.me.kills}/{m.me.deaths}/{m.me.assists}
+                    {allAccounts && m.me.riotId && <span className="text-xs text-muted"> · {m.me.riotId}</span>}
                     {m.friends.length > 0 && <span className="text-xs text-muted"> · avec {m.friends.join(", ")}</span>}
                   </Link>
                   <ScorePill score={m.me.score} reliability={m.me.reliability} />

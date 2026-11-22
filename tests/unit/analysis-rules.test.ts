@@ -107,3 +107,14 @@ describe("bilan expert : erreurs récurrentes", () => {
     expect(rep.summary).toMatch(/Erreur qui revient le plus : 3 morts sans balise/);
   });
 });
+
+describe("bilan sans aucun moment", () => {
+  it("n'invente pas de conseils : explique pourquoi et quoi faire", async () => {
+    const { gameReportRules } = await import("@/server/analysis/ai");
+    const r = gameReportRules([], { linked: false, minimap: false, videoMs: 31_000 });
+    expect(r.summary).toMatch(/n'est liée à aucune partie Riot.*31 s.*minimap/);
+    expect(r.priorities.map((p) => p.title)).toEqual(["Lier la vidéo à ta partie", "Importer la partie entière", "Régler la minimap"]);
+    expect(r.summary).not.toMatch(/Point général/);
+    expect(gameReportRules([], { linked: true, minimap: true, videoMs: 1_800_000 }).priorities).toEqual([]);
+  });
+});

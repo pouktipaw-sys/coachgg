@@ -118,6 +118,45 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const clips = await prisma.clip.findMany({ where: { recordingId: id, kind: "DEATH" }, orderBy: { startMs: "asc" } });
     expect(clips.length).toBe(2); // la mort non vue à l'image a aussi son clip
   }, 240_000);
+  it("liaison automatique sans date dans le nom : date de modification du fichier", async () => {
+    if (!existsSync(fixture("two-deaths.mp4")))
+      execSync(
+        "ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 50 -vf \"hue=s=0:enable='between(t,13,18)+between(t,33,38)'\" -c:v libx264 -pix_fmt yuv420p two-deaths.mp4",
+        { cwd: fixture("") },
+      );
+    copyFileSync(fixture("two-deaths.mp4"), fixture("ma game renommee.mp4"));
+    const u = await makeUser("Dan");
+    await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Me", tagLine: "EUW", platform: "EUW1", puuid: "ME" } });
+    const tl3 = structuredClone(timeline);
+    (tl3.info.frames[0]!.events as object[]).splice(0, Infinity,
+      { type: "CHAMPION_KILL", timestamp: 11_000, position: { x: 9100, y: 9600 }, killerId: 8, victimId: 1, assistingParticipantIds: [7] },
+      { type: "CHAMPION_KILL", timestamp: 31_000, position: { x: 8000, y: 8000 }, killerId: 6, victimId: 1, assistingParticipantIds: [9] },
+    );
+    const client = new RiotClient("k", async (url: string) => {
+      if (url.includes("/EUW1_999/timeline")) return new Response(JSON.stringify({ ...tl3, metadata: { matchId: "EUW1_999", participants: puuids } }), { status: 200 });
+      if (url.includes("/ids?")) return new Response(JSON.stringify(["EUW1_999"]), { status: 200 });
+      if (url.includes("/matches/EUW1_999")) return new Response(JSON.stringify({ ...match, metadata: { matchId: "EUW1_999" } }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    });
+    await importRecentMatches(u.id, 1, client);
+    // Fichier enregistré jusqu'à la fin de la partie (+ 1 min), puis renommé : seule la date de modification reste.
+    const id = await uploadFile(u.id, "ma game renommee.mp4", { fileModifiedAt: new Date(1_760_001_860_000) });
+    const rec = await prisma.recording.findUniqueOrThrow({ where: { id } });
+    expect(rec.matchId).toBe((await prisma.match.findFirstOrThrow({ where: { riotMatchId: "EUW1_999" } })).id);
+    expect(Math.abs(rec.gameStartOffsetMs! - 2000)).toBeLessThanOrEqual(150);
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    const note = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note;
+    expect(note).toMatch(/liée à la partie.*date de modification du fichier/);
+  }, 300_000);
+
+  it("vidéo sans partie Riot : la liaison explique pourquoi elle échoue", async () => {
+    const u = await makeUser("Eve");
+    const id = await uploadFile(u.id, "analysis.mp4", { fileModifiedAt: new Date() });
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    const steps = (job.result as { steps: { name: string; note?: string }[] }).steps;
+    expect(steps.find((s) => s.name === "Liaison et synchronisation automatiques")!.note).toMatch(/aucune partie Riot importée/);
+  }, 240_000);
+
   it("liaison et synchronisation automatiques : date du nom de fichier + alignement de 2 morts", async () => {
     // Vidéo de 50 s avec deux écrans grisés (13-18 s et 33-38 s) ; partie : morts à 0:11 et 0:31 → décalage 2 s.
     if (!existsSync(fixture("two-deaths.mp4")))

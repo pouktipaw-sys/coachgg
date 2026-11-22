@@ -22,6 +22,8 @@ export const createUploadSchema = z.object({
   // Synchronisation : temps vidéo (ms) à 00:00 en jeu (fourni par l'application PC, ou saisi).
   gameStartOffsetMs: z.number().int().min(-6 * 3600_000).max(6 * 3600_000).optional(),
   capturedAt: z.coerce.date().optional(),
+  // Date de modification du fichier côté navigateur (File.lastModified) : sert à retrouver la partie.
+  fileModifiedAt: z.coerce.date().optional(),
   clientUploadId: z.string().trim().regex(/^[\w-]{8,64}$/).optional(),
 });
 
@@ -72,6 +74,7 @@ export async function createUpload(userId: string, raw: unknown, device: { id: s
       originalKey: "pending",
       gameStartOffsetMs: input.gameStartOffsetMs ?? null,
       capturedAt: input.capturedAt ?? null,
+      fileModifiedAt: input.fileModifiedAt && input.fileModifiedAt.getTime() <= Date.now() + 86400_000 ? input.fileModifiedAt : null,
       source: device ? "DESKTOP_CAPTURE" : "MANUAL_UPLOAD",
       deviceId: device?.id ?? null,
       clientUploadId: device ? input.clientUploadId ?? null : null,

@@ -41,17 +41,20 @@ export function parseMatchFilters(raw: Record<string, string | undefined>): Matc
 }
 
 /** Historique de l'utilisateur, avec sa ligne de participant, sa note et le nombre d'amis présents. */
+/** Participations d'un compte Riot précis (PUUID si connu, sinon Riot ID). */
+export function accountParticipantWhere(account: { puuid: string | null; gameName: string; tagLine: string }): Prisma.MatchParticipantWhereInput {
+  return account.puuid
+    ? { puuid: account.puuid }
+    : { riotGameName: { equals: account.gameName, mode: "insensitive" }, riotTagLine: { equals: account.tagLine, mode: "insensitive" } };
+}
+
 export async function listUserMatches(userId: string, f: MatchFilters, take = 100, skip = 0) {
   const days = { "7d": 7, "30d": 30, "90d": 90, all: null }[f.period];
   const since = days ? new Date(Date.now() - days * 86400_000) : null;
   const account = f.account ? await prisma.gameIdentity.findFirst({ where: { id: f.account, userId }, select: { puuid: true, gameName: true, tagLine: true } }) : null;
   const mine: Prisma.MatchParticipantWhereInput = {
     userId,
-    ...(account
-      ? account.puuid
-        ? { puuid: account.puuid }
-        : { riotGameName: { equals: account.gameName, mode: "insensitive" as const }, riotTagLine: { equals: account.tagLine, mode: "insensitive" as const } }
-      : {}),
+    ...(account ? accountParticipantWhere(account) : {}),
     ...(f.champion ? { championName: { equals: f.champion, mode: "insensitive" } } : {}),
     ...(f.role ? { role: f.role } : {}),
   };
@@ -95,6 +98,7 @@ export async function listUserMatches(userId: string, f: MatchFilters, take = 10
       durationSec: m.durationSec,
       me: {
         championName: me.championName,
+        riotId: me.riotGameName ? `${me.riotGameName}#${me.riotTagLine ?? ""}` : null,
         role: me.role,
         win: me.win,
         kills: me.statistics?.kills ?? null,

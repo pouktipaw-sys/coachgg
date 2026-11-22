@@ -92,6 +92,10 @@ Avant l'étape timeline, l'analyse tente de se passer de toute manipulation :
 1. **Liaison** (si la vidéo n'est liée à aucune partie) : la date d'enregistrement est lue dans le nom du fichier
    (client LoL « … 2024-09-18 19-24-33 », OBS, ShadowPlay, Outplayed…) ou fournie par l'application PC ; la partie Riot
    importée qui contient cette heure (± 10 min) est retenue. L'heure du fichier est l'heure locale du PC qui fait tourner CoachGG.
+   Sans date dans le nom (fichier renommé), les indices suivants sont essayés dans l'ordre : date de création inscrite dans
+   la vidéo (tag `creation_time`, valeurs par défaut 1904/1970 écartées), puis date de modification du fichier envoyée par le
+   navigateur (≈ fin de l'enregistrement). Une partie plus courte que la vidéo (− 10 min de marge) n'est jamais retenue.
+   La note de l'étape indique l'indice utilisé ; en cas d'échec, elle dit pourquoi (aucune partie importée, ou dates essayées).
 2. **Synchronisation** (si le décalage est inconnu) : les morts vues à l'image (écrans grisés) sont alignées sur les morts
    réelles de la timeline ; le décalage est accepté avec **au moins 2 concordances** à ± 1,5 s, puis affiné (moyenne).
 

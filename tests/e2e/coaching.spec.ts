@@ -409,3 +409,25 @@ test("communauté : question sur le forum, commentaire, j'aime ; pages progressi
   await page.goto("/app/skills");
   await expect(page.getByRole("heading", { name: /Objectif : Argent/ })).toBeVisible();
 });
+
+test("paramètres : champions préférés en autocomplétion et email de test", async ({ page }) => {
+  await register(page, "Champ");
+  await page.goto("/app/settings");
+  await page.waitForLoadState("networkidle");
+  const field = page.getByRole("combobox", { name: "Ajouter un champion préféré" });
+  await field.fill("ka");
+  await expect(page.getByRole("option", { name: /Kai'Sa/ })).toBeVisible(); // la liste apparaît dès la saisie
+  await page.getByRole("option", { name: /Kai'Sa/ }).click();
+  await field.fill("mf");
+  await field.press("Enter");
+  await expect(page.getByRole("button", { name: "Retirer Kai'Sa" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retirer Miss Fortune" })).toBeVisible();
+  await page.screenshot({ path: "test-results/champions.png" });
+  await page.click("button:has-text('Enregistrer')");
+  await page.waitForTimeout(500);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Retirer Miss Fortune" })).toBeVisible(); // enregistré
+  // Sans SMTP en test : réponse claire, pas d'erreur
+  await page.click("button:has-text(\"M'envoyer un email de test\")");
+  await expect(page.getByText(/Envoi demandé|console du serveur/)).toBeVisible();
+});

@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, errorMessage } from "@/lib/client";
 import { ROLE_LABELS } from "@/components/stats";
+import { ChampionMultiInput } from "@/components/ChampionInput";
 
 type Profile = {
   primaryRole: string | null;
@@ -60,8 +61,8 @@ export function ProfileForm({ displayName, profile, onboarding = false }: { disp
           <input id="p-name" name="displayName" className="input" defaultValue={displayName} required minLength={2} maxLength={40} />
         </div>
         <div>
-          <label className="label" htmlFor="p-champs">Champions préférés (séparés par des virgules, 5 max)</label>
-          <input id="p-champs" name="favoriteChampions" className="input" defaultValue={profile.favoriteChampions.join(", ")} />
+          <label className="label" htmlFor="p-champs">Champions préférés (5 max)</label>
+          <ChampionMultiInput id="p-champs" name="favoriteChampions" defaultValue={profile.favoriteChampions} />
         </div>
         <div>
           <label className="label" htmlFor="p-r1">Rôle principal</label>

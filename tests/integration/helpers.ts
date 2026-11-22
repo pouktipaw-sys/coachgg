@@ -16,9 +16,9 @@ export async function makeUser(name: string) {
 export const fixture = (name: string) => path.resolve(__dirname, "../fixtures/generated", name);
 
 /** Envoie un vrai fichier par morceaux puis exécute le worker. */
-export async function uploadFile(userId: string, file: string, opts: { chunk?: number; process?: boolean } = {}) {
+export async function uploadFile(userId: string, file: string, opts: { chunk?: number; process?: boolean; fileModifiedAt?: Date } = {}) {
   const buf = await readFile(fixture(file));
-  const { id, chunkSize } = await createUpload(userId, { filename: file, sizeBytes: buf.byteLength, mimeType: "" });
+  const { id, chunkSize } = await createUpload(userId, { filename: file, sizeBytes: buf.byteLength, mimeType: "", fileModifiedAt: opts.fileModifiedAt });
   const size = Math.min(opts.chunk ?? chunkSize, chunkSize);
   for (let off = 0; off < buf.byteLength; off += size) {
     await appendChunk(userId, id, off, new Uint8Array(buf.subarray(off, off + size)));

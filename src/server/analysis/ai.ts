@@ -356,8 +356,46 @@ const CATEGORY_ADVICE: Record<string, { title: string; drill: string }> = {
   ALLY_SUPPORT: { title: "Jeu d'équipe", drill: "Signale tes intentions (ping) avant d'avancer et suis les engagements de tes alliés." },
 };
 
+export type ReportContext = { linked?: boolean; minimap?: boolean; videoMs?: number | null };
+
+/** Aucun moment : on n'invente pas de conseils, on explique pourquoi et quoi faire pour obtenir une vraie analyse. */
+function emptyReport(ctx: ReportContext): z.infer<typeof GameReportSchema> {
+  const short = ctx.videoMs != null && ctx.videoMs < 5 * 60_000;
+  const reasons = [
+    !ctx.linked && "la vidéo n'est liée à aucune partie Riot (les morts réelles ne sont pas connues)",
+    short && `la vidéo ne dure que ${Math.round(ctx.videoMs! / 1000)} s`,
+    !ctx.minimap && "la zone de la minimap n'est pas réglée",
+  ].filter(Boolean) as string[];
+  const priorities = [
+    !ctx.linked && {
+      title: "Lier la vidéo à ta partie",
+      why: "Sans la partie Riot, l'analyse ne voit que l'image : elle ne connaît ni tes morts ni leurs causes.",
+      drill: "Encadré « Informations » → choisis la partie, puis « Relancer l'analyse ». Si la partie n'apparaît pas, synchronise ton compte Riot dans « Comptes ».",
+    },
+    short && {
+      title: "Importer la partie entière",
+      why: "Un extrait court contient rarement une mort ou un combat décisif.",
+      drill: "Enregistre toute la partie (OBS, Outplayed, Medal…) et importe le fichier d'origine sans le renommer.",
+    },
+    !ctx.minimap && {
+      title: "Régler la minimap",
+      why: "La minimap sert à repérer les rotations et à dessiner les schémas.",
+      drill: "Onglet « Synchro » → choisis le préréglage de minimap qui correspond à ton écran.",
+    },
+  ].filter(Boolean) as { title: string; why: string; drill: string }[];
+  return {
+    summary: reasons.length
+      ? `Aucun moment détecté : ${reasons.join(", ")}. Aucun conseil n'est donné au hasard : suis les étapes ci-contre puis relance l'analyse.`
+      : "Aucune mort ni moment marquant détecté dans cette vidéo. Si tu es mort pendant la partie, relance l'analyse ou marque le moment à la main.",
+    patterns: [],
+    priorities,
+    nextGameGoal: priorities.length ? `Faire « ${priorities[0]!.title} », puis relancer l'analyse.` : "Marque toi-même un moment à revoir dans la vidéo.",
+  };
+}
+
 /** Bilan sans IA : construit uniquement à partir des moments enregistrés. */
-export function gameReportRules(moments: MomentLite[]): z.infer<typeof GameReportSchema> {
+export function gameReportRules(moments: MomentLite[], ctx: ReportContext = { linked: true, minimap: true }): z.infer<typeof GameReportSchema> {
+  if (!moments.length) return emptyReport(ctx);
   const deaths = moments.filter((m) => m.kind === "MISTAKE" || /mort/i.test(m.title)).length;
   const counts = new Map<string, number>();
   for (const m of moments) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);

@@ -87,6 +87,7 @@ export async function processRecording(job: AnalysisJob) {
         height: meta.height,
         fps: meta.fps,
         videoCodec: meta.videoCodec,
+        mediaCreatedAt: meta.createdAt,
       },
     });
     await notify(rec.ownerId, {
