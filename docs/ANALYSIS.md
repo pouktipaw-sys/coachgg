@@ -22,7 +22,7 @@ Robustesse : sous-processus Python sans shell, délai max (`ANALYSIS_TIMEOUT_SEC
 ## Signaux et règles
 | Signal | Mesure | Proposition |
 |---|---|---|
-| Écran grisé | saturation de la vue de jeu (hors interface du bas) < 35 % de la médiane de la vidéo pendant ≥ 3 s | « Mort probable, contexte à revoir » — type *Situation intéressante* (jamais *erreur*), confiance « ne permet pas de conclure » |
+| Écran grisé | saturation **médiane** de la vue de jeu (hors interface du bas ; insensible aux webcams et chats de stream restés en couleur) : segment délimité sous 45 % de la référence de la vidéo, passant au moins une fois sous 35 %, durant ≥ 2 s (≥ 1,5 s s'il est coupé par la fin de la vidéo). Calé sur un vrai clip de stream : début retrouvé à l'image près | « Mort probable, contexte à revoir » — type *Situation intéressante* (jamais *erreur*), confiance « ne permet pas de conclure » |
 | + marqueurs rouges minimap | hausse ≥ 1 % de la surface de la minimap **avant** l'écran grisé, par rapport aux 20 s précédentes ; centroïde des nouveaux pixels rouges | confiance faible, catégorie Vision, une alternative **conditionnelle** avec ses limites, annotation minimap « marqueurs rouges (non identifiés) » |
 | Forte activité | mouvement > 2,5 × la médiane pendant ≥ 2 s (hors fenêtres de mort), 3 max | « Engagement probable » — aucune décision évaluée |
 

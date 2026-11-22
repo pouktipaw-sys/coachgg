@@ -31,8 +31,10 @@ VERSION = "auto-0.1.0"
 
 # Paramètres des règles (figés pour cette version).
 GAME_REGION = (0.05, 0.05, 0.90, 0.67)  # x, y, w, h normalisés : exclut l'interface du bas
-GREY_RATIO = 0.35        # saturation < 35 % de la référence => image grisée
-GREY_MIN_SEC = 3.0
+GREY_RATIO = 0.35        # saturation < 35 % de la référence => image grisée (au moins une fois dans le segment)
+GREY_EXTEND_RATIO = 0.45 # bornes du segment : < 45 % (l'écran de mort s'éclaircit vers la réapparition)
+GREY_END_MIN_SEC = 1.5   # écran grisé coupé par la fin de la vidéo : 1,5 s suffisent
+GREY_MIN_SEC = 2.0       # les clips coupés ne gardent souvent que 2-3 s de l'écran de mort
 MIN_BASELINE_SAT = 25.0  # vidéo déjà peu colorée => détection désactivée
 ACTIVITY_MIN_SEC = 2.0
 ACTIVITY_FACTOR = 2.5    # mouvement > 2,5 x la médiane
@@ -74,15 +76,28 @@ def red_mask(bgr: np.ndarray) -> np.ndarray:
     return ((h < 10) | (h > 170)) & (s > 120) & (v > 90)
 
 
+def frame_saturation(game_bgr: np.ndarray) -> float:
+    """Saturation MÉDIANE de la zone de jeu : insensible aux incrustations restées en couleur
+    (webcam, chat, alertes de stream) qui faussent la moyenne pendant l'écran de mort."""
+    return float(np.median(cv2.cvtColor(game_bgr, cv2.COLOR_BGR2HSV)[..., 1]))
+
+
 def detect_grey(sat: np.ndarray, fps: float) -> tuple[list[dict], float, list[str]]:
     warnings: list[str] = []
     baseline = float(np.median(sat)) if len(sat) else 0.0
     if baseline < MIN_BASELINE_SAT:
         warnings.append("Vidéo peu colorée : détection d'écran grisé désactivée.")
         return [], baseline, warnings
-    low = sat < GREY_RATIO * baseline
+    # Hystérésis : segment délimité au seuil souple, gardé seulement s'il passe sous le seuil strict.
+    low = sat < GREY_EXTEND_RATIO * baseline
+    end_min = max(1, int(round(GREY_END_MIN_SEC * fps)))
+    full_min = max(1, int(round(GREY_MIN_SEC * fps)))
     out = []
-    for a, b in segments(low, max(1, int(round(GREY_MIN_SEC * fps)))):
+    for a, b in segments(low, end_min):
+        if b - a + 1 < full_min and b < len(sat) - 1:
+            continue  # trop court, sauf s'il est coupé par la fin de la vidéo
+        if float(np.min(sat[a : b + 1])) >= GREY_RATIO * baseline:
+            continue
         ratio = float(np.mean(sat[a : b + 1]) / baseline)
         dur = (b - a + 1) / fps
         out.append({
@@ -122,8 +137,8 @@ def refine_grey_start(video: str, width: int, height: int, start_s: float, basel
     sats = []
     for k in range(len(raw) // fb):
         frame = np.frombuffer(raw[k * fb : (k + 1) * fb], np.uint8).reshape(h, w, 3)
-        sats.append(float(cv2.cvtColor(frame[gsl], cv2.COLOR_BGR2HSV)[..., 1].mean()))
-    i = first_grey_index(sats, GREY_RATIO * baseline)
+        sats.append(frame_saturation(frame[gsl]))
+    i = first_grey_index(sats, GREY_EXTEND_RATIO * baseline)
     return None if i is None else t0 + i / REFINE_FPS
 
 
@@ -200,8 +215,7 @@ def sample_video(video: str, width: int, height: int, fps: float, minimap, durat
             break
         frame = np.frombuffer(buf, np.uint8).reshape(h, w, 3)
         game = frame[gsl]
-        hsv = cv2.cvtColor(game, cv2.COLOR_BGR2HSV)
-        sats.append(float(hsv[..., 1].mean()))
+        sats.append(frame_saturation(game))
         gray = cv2.cvtColor(game, cv2.COLOR_BGR2GRAY).astype(np.int16)
         motions.append(0.0 if prev is None else float(np.abs(gray - prev).mean()))
         prev = gray

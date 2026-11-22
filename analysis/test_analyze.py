@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from analyze import detect_activity, detect_grey, minimap_rise, segments
+from analyze import detect_activity, detect_grey, frame_saturation, minimap_rise, segments
 
 
 class Segments(unittest.TestCase):
@@ -26,6 +26,34 @@ class Grey(unittest.TestCase):
     def test_short_dip_ignored(self):
         sat = np.full(60, 120.0)
         sat[10:13] = 10.0  # 1,5 s
+        self.assertEqual(detect_grey(sat, fps=2)[0], [])
+
+    def test_overlay_in_colour_does_not_hide_death_screen(self):
+        # Écran de mort grisé, mais webcam et chat du streamer restés en couleur (≈ 30 % de l'image).
+        colour = np.zeros((100, 160, 3), np.uint8); colour[:] = (40, 160, 60)
+        grey = np.full((100, 160, 3), 90, np.uint8)
+        grey[0:45, 0:55] = (30, 60, 230); grey[60:100, 100:160] = (200, 40, 160)
+        ratio = frame_saturation(grey) / frame_saturation(colour)
+        self.assertLess(ratio, 0.1)  # la moyenne, elle, restait au-dessus de 0,3
+
+    def test_short_clip_death_kept(self):
+        sat = np.full(60, 98.0)
+        sat[18:24] = 24.0  # 3 s d'écran grisé dans un clip coupé
+        sat[56:60] = 22.0  # 2 s à la toute fin de la vidéo
+        found = detect_grey(sat, fps=2)[0]
+        self.assertEqual([(g["startIdx"], g["endIdx"]) for g in found], [(18, 23), (56, 59)])
+
+    def test_real_clip_profile(self):
+        # Valeurs mesurées sur un vrai clip de stream (2 i/s) : morts à 9 s et 28 s (coupée par la fin).
+        sat = np.array([100, 100, 100, 97, 95, 96, 94, 94, 90, 85, 80, 77, 72, 72, 76, 75, 82, 87, 26, 26, 32, 38, 38, 40, 50, 61, 71,
+                        115, 112, 108, 106, 102, 100, 101, 100, 99, 103, 103, 102, 102, 102, 102, 102, 104, 103, 92, 103, 103, 99, 101,
+                        105, 102, 101, 102, 102, 94, 26, 28, 30], float)
+        found = detect_grey(sat, fps=2)[0]
+        self.assertEqual([(g["startIdx"], g["endIdx"]) for g in found], [(18, 23), (56, 58)])
+
+    def test_dim_scene_without_deep_grey_ignored(self):
+        sat = np.full(60, 100.0)
+        sat[20:30] = 42.0  # scène sombre : sous 45 % mais jamais sous 35 %
         self.assertEqual(detect_grey(sat, fps=2)[0], [])
 
     def test_disabled_on_greyish_video(self):
