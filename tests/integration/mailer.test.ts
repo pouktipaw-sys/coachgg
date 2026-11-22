@@ -69,3 +69,13 @@ describe("mailer SMTP", () => {
     expect((await sendMail({ to: "a@test.dev", subject: "x", text: "y" })).driver).toBe("console");
   });
 });
+
+describe("raison lisible d'un refus SMTP", async () => {
+  const { smtpErrorHint } = await import("@/server/mailer");
+  it("identifiants, connexion, adresse, sans jamais recopier SMTP_URL", () => {
+    expect(smtpErrorHint({ code: "EAUTH", responseCode: 535, response: "535-5.7.8 Username and Password not accepted" })).toMatch(/identifiants refusés.*deux étapes.*MÊME compte/);
+    expect(smtpErrorHint({ code: "ETIMEDOUT" })).toMatch(/connexion impossible/);
+    expect(smtpErrorHint({ code: "EENVELOPE", responseCode: 553 })).toMatch(/MAIL_FROM/);
+    expect(smtpErrorHint({ code: "X", message: "fail smtps://a%40b.com:secret@smtp.gmail.com:465" })).not.toMatch(/secret/);
+  });
+});

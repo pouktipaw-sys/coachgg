@@ -15,7 +15,7 @@ export const POST = authed(async (_req, user) => {
     text: "Si tu lis ce message, l'envoi d'emails de CoachGG fonctionne : invitations et liens de réinitialisation arriveront ici.",
   });
   if (r.driver === "smtp" && !r.delivered)
-    throw new HttpError(502, "smtp_failed", "Le serveur SMTP a refusé l'envoi : vérifie SMTP_URL (adresse, mot de passe d'application, port) dans .env.");
+    throw new HttpError(502, "smtp_failed", `Envoi refusé — ${r.detail ?? "vérifie SMTP_URL dans .env"}`);
   if (r.driver === "console") return Response.json({ delivered: false, message: "Aucun SMTP configuré : le message a été écrit dans la console du serveur (dev uniquement)." });
   if (r.driver === "none") throw new HttpError(503, "not_configured", "Aucun SMTP configuré (SMTP_URL) : aucun email ne peut être envoyé.");
   return Response.json({ delivered: true });
