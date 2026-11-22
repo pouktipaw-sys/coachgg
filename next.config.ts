@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Partage depuis son PC via un tunnel Cloudflare gratuit (cloudflared tunnel --url http://localhost:3000)
+  allowedDevOrigins: ["*.trycloudflare.com"],
   // Les fichiers vidéo transitent par nos route handlers en flux (chunks) :
   // pas de limite de body côté route handlers, la limite est appliquée par notre code.
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg"],

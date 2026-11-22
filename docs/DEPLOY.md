@@ -103,3 +103,24 @@ change `DOMAIN` et `APP_URL`, et lance `docker compose up -d`. Le certificat HTT
 
 Même code (GitHub), **données séparées** : les comptes et vidéos du site en ligne ne sont pas dans ton localhost, et inversement.
 Le localhost sert de terrain de test sans risque pour les vrais comptes.
+
+---
+
+# Alternative la plus simple : partager depuis son PC (tunnel Cloudflare)
+
+Gratuit, sans compte ni carte, 5 minutes. Limite : le site n'est accessible que **pendant que ton PC est allumé**
+avec l'appli lancée, et l'adresse change à chaque lancement du tunnel.
+
+```bash
+winget install Cloudflare.cloudflared
+```
+
+Terminal 1 (l'appli, comme d'habitude) : `npm run dev:all`
+
+Terminal 2 :
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+L'adresse `https://xxxx.trycloudflare.com` affichée est utilisable depuis n'importe quel téléphone ou PC.
