@@ -107,6 +107,7 @@ createdb coachgg_test && createdb coachgg_e2e
 
 ## Documentation
 
+- [docs/DEPLOY.md](docs/DEPLOY.md) — **mise en ligne gratuite** (Oracle Cloud Always Free) : Docker, HTTPS automatique, mises à jour automatiques depuis GitHub.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — découpage, modèle de données, pipeline, sécurité.
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — variables d'environnement, intégrations externes, déploiement.
 - [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md) — format des annotations et des moments de coaching.

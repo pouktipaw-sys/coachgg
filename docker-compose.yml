@@ -1,0 +1,77 @@
+# Mise en ligne de CoachGG sur un serveur (ex. Oracle Cloud Always Free) : docs/DEPLOY.md
+#   docker compose up -d --build
+# Services : base de données, migrations (une fois au démarrage), site, worker vidéo, HTTPS automatique.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: coachgg
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD manquant dans .env}
+      POSTGRES_DB: coachgg
+      TZ: UTC
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coachgg -d coachgg"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build: .
+    image: coachgg-app
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://coachgg:${DB_PASSWORD}@db:5432/coachgg
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    image: coachgg-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://coachgg:${DB_PASSWORD}@db:5432/coachgg
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    image: coachgg-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://coachgg:${DB_PASSWORD}@db:5432/coachgg
+    command: ["npm", "run", "worker"]
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN manquant dans .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  db:
+  storage:
+  caddy_data:
+  caddy_config:

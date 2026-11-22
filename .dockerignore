@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.env
+.env.*
+storage
+test-results
+playwright-report
+coverage
+tests/fixtures/generated
+tests/.storage
+tests/.storage-e2e
+test-videos
+.venv-analysis
+**/__pycache__
+*.tsbuildinfo

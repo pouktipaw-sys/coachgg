@@ -1,0 +1,12 @@
+# HTTPS automatique (certificat Let's Encrypt gratuit, renouvelé tout seul) devant le site.
+# DOMAIN vient du .env, ex. coachgg.141-145-12-34.sslip.io ou coachgg.duckdns.org
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000 {
+		# Envois vidéo longs (morceaux de 8 Mo) : pas de coupure prématurée
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+}
