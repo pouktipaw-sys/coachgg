@@ -31,7 +31,16 @@ function checkOrigin(req: NextRequest) {
   const origin = req.headers.get("origin");
   if (!origin) return; // client non-navigateur : le cookie SameSite=Lax protège déjà
   const allowed = new Set([new URL(env.appUrl).origin, req.nextUrl.origin]);
-  if (!allowed.has(origin)) throw new HttpError(403, "bad_origin", "Origine non autorisée.");
+  if (allowed.has(origin)) return;
+  // Derrière un tunnel ou un proxy HTTPS (Cloudflare, Caddy), le serveur voit « localhost » :
+  // on compare alors l'hôte de la page à l'hôte par lequel la requête est réellement arrivée.
+  let originHost = "";
+  try {
+    originHost = new URL(origin).host.toLowerCase();
+  } catch {}
+  const viaHost = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "").split(",")[0]!.trim().toLowerCase();
+  if (originHost && originHost === viaHost) return;
+  throw new HttpError(403, "bad_origin", "Origine non autorisée.");
 }
 
 export function handler<P = Record<string, string>>(fn: (req: NextRequest, params: P) => Promise<Response>) {
