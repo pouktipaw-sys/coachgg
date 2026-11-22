@@ -118,6 +118,65 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     const clips = await prisma.clip.findMany({ where: { recordingId: id, kind: "DEATH" }, orderBy: { startMs: "asc" } });
     expect(clips.length).toBe(2); // la mort non vue à l'image a aussi son clip
   }, 240_000);
+  it("erreurs sans mort : retour raté, retour avant le dragon, sbires perdus — clips, pastilles, bilan de voie", async () => {
+    // Vidéo de 5 min (petite résolution) ; décalage 2 s. Partie de 15 min (bilan de voie à 10 et 15 min).
+    if (!existsSync(fixture("five-min.mp4")))
+      execSync("ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=320x180:rate=5 -t 300 -c:v libx264 -pix_fmt yuv420p five-min.mp4", { cwd: fixture("") });
+    const u = await makeUser("Mac");
+    await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Me", tagLine: "EUW", platform: "EUW1", puuid: "ME" } });
+    const csPerMin = (pid: number, m: number) => (pid === 1 ? (m === 4 || m === 5 ? 1 : 8) : pid === 6 ? 8 : 6);
+    const pf = (m: number) => Object.fromEntries(puuids.map((_, i) => {
+      const pid = i + 1;
+      let cs = 0;
+      for (let k = 1; k <= m; k++) cs += csPerMin(pid, k);
+      return [String(pid), { position: pid === 1 ? { x: 3000, y: 12000 } : { x: 9000, y: 9000 }, totalGold: 500 + m * 400, level: 1 + m, currentGold: pid === 1 && (m === 3 || m === 4) ? 1700 + m * 100 : 300, minionsKilled: cs, jungleMinionsKilled: 0 }];
+    }));
+    // Achat à 2:05, puis retour à la base à 3:30 juste avant le dragon pris par l'ennemi à 4:20 (le joueur est loin, en base).
+    const tl4 = { metadata: { matchId: "EUW1_555", participants: puuids }, info: { frames: Array.from({ length: 16 }, (_, m) => m).map((m) => ({
+      timestamp: m * 60_000,
+      participantFrames: pf(m),
+      events: m === 2 ? [{ type: "ITEM_PURCHASED", timestamp: 2 * 60_000 + 5000, participantId: 1 }] :
+        m === 3 ? [{ type: "ITEM_PURCHASED", timestamp: 3 * 60_000 + 30_000, participantId: 1 }] :
+        m === 4 ? [{ type: "ELITE_MONSTER_KILL", timestamp: 4 * 60_000 + 20_000, monsterType: "DRAGON", killerTeamId: 200, killerId: 7 }] : [],
+    })) } };
+    const m5 = { ...match, metadata: { matchId: "EUW1_555" }, info: { ...match.info, gameDuration: 930 } };
+    const client = new RiotClient("k", async (url: string) => {
+      if (url.includes("/EUW1_555/timeline")) return new Response(JSON.stringify(tl4), { status: 200 });
+      if (url.includes("/ids?")) return new Response(JSON.stringify(["EUW1_555"]), { status: 200 });
+      if (url.includes("/matches/EUW1_555")) return new Response(JSON.stringify(m5), { status: 200 });
+      return new Response("{}", { status: 404 });
+    });
+    await importRecentMatches(u.id, 1, client);
+    const mt = await prisma.match.findFirstOrThrow({ where: { riotMatchId: "EUW1_555" } });
+    expect((mt.timelineFacts as { v: number }).v).toBe(2);
+    const id = await uploadFile(u.id, "five-min.mp4", { process: false });
+    await drain();
+    await prisma.recording.update({ where: { id }, data: { matchId: mt.id, gameStartOffsetMs: 2000, minimapRegion: { x: 0.78, y: 0.66, w: 0.19, h: 0.33 } } });
+    await requestAnalysis(id, 10);
+    await drain();
+
+    const recs = await prisma.recommendation.findMany({ where: { recordingId: id, analysisVersion: "riot-timeline-1.0.0" }, orderBy: { decisionMs: "asc" } });
+    const flags = (r: (typeof recs)[number]) => (r.autoEvidence as { flags: string[] }).flags;
+    const cs = recs.find((r) => flags(r).includes("cs_drop"))!;
+    expect(cs.title).toBe("Sbires perdus de 3:00 à 5:00 (environ −14)");
+    expect(cs).toMatchObject({ kind: "MISTAKE", category: "RESOURCES", decisionMs: 182_000 });
+    const bad = recs.find((r) => flags(r).includes("bad_back"))!;
+    expect(bad.title).toBe("Retour à la base 50 s avant que l'ennemi prenne le dragon (4:20)");
+    expect(bad.decisionMs).toBe(2000 + 3 * 60_000 + 20_000);
+    expect(recs.some((r) => flags(r).includes("missed_back"))).toBe(false); // passage à la boutique à 3:30 : pas un retour « raté »
+    const anns = (await prisma.recommendation.findUniqueOrThrow({ where: { id: bad.id }, include: { annotations: true } })).annotations;
+    expect(anns.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "zone:danger"]);
+    expect(await prisma.clip.count({ where: { recordingId: id, kind: "MISTAKE" } })).toBe(2);
+    const report = (await prisma.recording.findUniqueOrThrow({ where: { id } })).gameReport as { patterns: string[]; summary: string };
+    expect(report.patterns[0]).toBe("À 15 min face à Darius : −14 sbires, 0 or.");
+    // Le dragon n'apparaît qu'une fois : comme « retour au mauvais moment », pas aussi comme « pris pendant que tu étais loin ».
+    expect(recs.filter((r) => /dragon/i.test(r.title))).toHaveLength(1);
+    expect(report.summary).toMatch(/erreur\(s\) sans mort/);
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" }, orderBy: { createdAt: "desc" } });
+    const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;
+    expect(step.note).toMatch(/0 retour\(s\) raté\(s\), 1 retour\(s\) au mauvais moment, 1 période\(s\) de sbires perdus/);
+  }, 400_000);
+
   it("liaison automatique sans date dans le nom : date de modification du fichier", async () => {
     if (!existsSync(fixture("two-deaths.mp4")))
       execSync(

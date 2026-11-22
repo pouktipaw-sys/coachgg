@@ -308,6 +308,9 @@ const FLAG_PATTERN: Record<string, { text: (n: number) => string; category: stri
   objective_lost: { text: (n) => `${n} morts juste avant un objectif perdu`, category: "ROTATIONS" },
   absent_fight: { text: (n) => `${n} combats perdus pendant que tu étais loin`, category: "ROTATIONS" },
   absent_objective: { text: (n) => `${n} objectifs pris par l'ennemi pendant que tu étais loin`, category: "ROTATIONS" },
+  missed_back: { text: (n) => `${n} retours à la base ratés (beaucoup d'or gardé sans rentrer)`, category: "RESOURCES" },
+  bad_back: { text: (n) => `${n} retours à la base juste avant un objectif perdu`, category: "ROTATIONS" },
+  cs_drop: { text: (n) => `${n} périodes de plusieurs minutes sans tuer de sbires`, category: "RESOURCES" },
 };
 
 export function recurringPatterns(moments: { flags?: string[] }[]) {
@@ -396,7 +399,10 @@ function emptyReport(ctx: ReportContext): z.infer<typeof GameReportSchema> {
 /** Bilan sans IA : construit uniquement à partir des moments enregistrés. */
 export function gameReportRules(moments: MomentLite[], ctx: ReportContext = { linked: true, minimap: true }): z.infer<typeof GameReportSchema> {
   if (!moments.length) return emptyReport(ctx);
-  const deaths = moments.filter((m) => m.kind === "MISTAKE" || /mort/i.test(m.title)).length;
+  const MACRO = ["missed_back", "bad_back", "cs_drop"];
+  const isMacro = (m: MomentLite) => (m.flags ?? []).some((f) => MACRO.includes(f));
+  const deaths = moments.filter((m) => !isMacro(m) && (m.kind === "MISTAKE" || /mort/i.test(m.title))).length;
+  const macro = moments.filter(isMacro).length;
   const counts = new Map<string, number>();
   for (const m of moments) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);
   // Les erreurs récurrentes mesurées passent devant le simple décompte par catégorie.
@@ -414,7 +420,7 @@ export function gameReportRules(moments: MomentLite[], ctx: ReportContext = { li
   });
   return {
     summary: moments.length
-      ? `${moments.length} moment(s) à revoir dans cette partie, dont ${deaths} mort(s) probable(s).${recurring.length ? ` Erreur qui revient le plus : ${recurring[0]!.text}.` : ""} Bilan établi sans IA, à partir des détections et des faits de la partie : revois chaque clip pour confirmer.`
+      ? `${moments.length} moment(s) à revoir dans cette partie, dont ${deaths} mort(s) probable(s)${macro ? ` et ${macro} erreur(s) sans mort (retours à la base, sbires)` : ""}.${recurring.length ? ` Erreur qui revient le plus : ${recurring[0]!.text}.` : ""} Bilan établi sans IA, à partir des détections et des faits de la partie : revois chaque clip pour confirmer.`
       : "Aucun moment marquant n'a été détecté automatiquement dans cette vidéo.",
     patterns: recurring.length
       ? recurring.slice(0, 3).map((r) => r.text)

@@ -9,7 +9,7 @@ import { PermanentJobError, enqueueJob, retryJob, setJobProgress } from "../jobs
 import { notify } from "../notifications";
 import { afterMatchSaved } from "../matches/service";
 import { env } from "@/lib/env";
-import { compactTimeline, type CompactTimeline } from "@/lib/riot/timelineFacts";
+import { COMPACT_VERSION, compactTimeline, type CompactTimeline } from "@/lib/riot/timelineFacts";
 import { RANKED_QUEUES, RiotApiError, RiotNotConfiguredError, convertRiotMatch, participantTimeline, riotClient, type RiotClient } from "./client";
 
 export type ImportStatus = "imported" | "already" | "linked";
@@ -89,8 +89,8 @@ async function importOne(userId: string, puuid: string, riotMatchId: string, cli
   return "imported";
 }
 
-async function saveTimelineFacts(matchId: string, tl: unknown, players: { puuid: string; teamSide: number; championName: string }[]) {
-  const ct = compactTimeline(tl as Parameters<typeof compactTimeline>[0], players.map((p) => ({ puuid: p.puuid, teamId: p.teamSide, champion: p.championName })));
+async function saveTimelineFacts(matchId: string, tl: unknown, players: { puuid: string; teamSide: number; championName: string; role?: string | null }[]) {
+  const ct = compactTimeline(tl as Parameters<typeof compactTimeline>[0], players.map((p) => ({ puuid: p.puuid, teamId: p.teamSide, champion: p.championName, role: p.role ?? null })));
   await prisma.match.update({ where: { id: matchId }, data: { timelineFacts: ct as unknown as Prisma.InputJsonValue } });
   return ct;
 }
@@ -100,15 +100,17 @@ async function saveTimelineFacts(matchId: string, tl: unknown, players: { puuid:
  * (matchs importés avant cette fonctionnalité). null si indisponible (pas de clé, match saisi…).
  */
 export async function ensureTimelineFacts(matchId: string, client?: RiotClient): Promise<CompactTimeline | null> {
-  const match = await prisma.match.findUnique({ where: { id: matchId }, include: { participants: { select: { puuid: true, teamSide: true, championName: true } } } });
+  const match = await prisma.match.findUnique({ where: { id: matchId }, include: { participants: { select: { puuid: true, teamSide: true, championName: true, role: true } } } });
   if (!match?.riotMatchId) return null;
-  if (match.timelineFacts) return match.timelineFacts as unknown as CompactTimeline;
-  if (!client && !env.riotApiKey) return null;
+  const stored = match.timelineFacts as unknown as CompactTimeline | null;
+  // Ancienne version stockée (sans sbires ni achats) : on la remplace si la clé Riot permet de la récupérer.
+  if (stored && (stored.v ?? 1) >= COMPACT_VERSION) return stored;
+  if (!client && !env.riotApiKey) return stored;
   try {
     const tl = await (client ?? riotClient()).timeline(match.riotMatchId);
     return await saveTimelineFacts(match.id, tl, match.participants.filter((p): p is typeof p & { puuid: string } => !!p.puuid));
   } catch {
-    return null;
+    return stored;
   }
 }
 

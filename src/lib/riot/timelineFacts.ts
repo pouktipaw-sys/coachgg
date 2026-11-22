@@ -7,13 +7,16 @@ export const MAP_SIZE = { x: 14870, y: 14980 }; // Faille de l'invocateur, unit�
 export type Pos = { x: number; y: number };
 export const FOUNTAIN: Record<number, Pos> = { 100: { x: 400, y: 400 }, 200: { x: 14400, y: 14400 } };
 
+/** v2 : sbires tués par minute (cs), achats d'objets (buys) et rôle de chaque joueur. */
+export const COMPACT_VERSION = 2;
 export type CompactTimeline = {
-  v: 1;
-  participants: { pid: number; puuid: string; teamId: number; champion: string }[];
-  frames: { t: number; pos: Record<string, Pos>; gold: Record<string, number>; level?: Record<string, number>; cur?: Record<string, number> }[];
+  v: 1 | 2;
+  participants: { pid: number; puuid: string; teamId: number; champion: string; role?: string | null }[];
+  frames: { t: number; pos: Record<string, Pos>; gold: Record<string, number>; level?: Record<string, number>; cur?: Record<string, number>; cs?: Record<string, number> }[];
   kills: { t: number; pos: Pos; killer: number; victim: number; assists: number[] }[];
   objectives: { t: number; kind: "DRAGON" | "BARON" | "HERALD" | "GRUBS" | "ATAKHAN" | "TOWER" | "INHIBITOR" | "OTHER"; team: number }[];
   wards: { t: number; pid: number }[];
+  buys?: { t: number; pid: number }[];
 };
 
 type RawEvent = {
@@ -28,10 +31,11 @@ type RawEvent = {
   teamId?: number;
   killerTeamId?: number;
   creatorId?: number;
+  participantId?: number;
 };
 type RawTimeline = {
   metadata: { participants: string[] };
-  info: { frames: { timestamp: number; events: RawEvent[]; participantFrames?: Record<string, { position?: Pos; totalGold?: number; level?: number; currentGold?: number }> }[] };
+  info: { frames: { timestamp: number; events: RawEvent[]; participantFrames?: Record<string, { position?: Pos; totalGold?: number; level?: number; currentGold?: number; minionsKilled?: number; jungleMinionsKilled?: number }> }[] };
 };
 
 const MONSTERS: Record<string, CompactTimeline["objectives"][number]["kind"]> = {
@@ -39,25 +43,27 @@ const MONSTERS: Record<string, CompactTimeline["objectives"][number]["kind"]> = 
 };
 
 /** Réduit la timeline brute aux informations utiles à l'analyse (quelques dizaines de Ko). */
-export function compactTimeline(t: RawTimeline, players: { puuid: string; teamId: number; champion: string }[]): CompactTimeline {
+export function compactTimeline(t: RawTimeline, players: { puuid: string; teamId: number; champion: string; role?: string | null }[]): CompactTimeline {
   const participants = t.metadata.participants.map((puuid, i) => {
     const p = players.find((x) => x.puuid === puuid);
-    return { pid: i + 1, puuid, teamId: p?.teamId ?? (i < 5 ? 100 : 200), champion: p?.champion ?? `Joueur ${i + 1}` };
+    return { pid: i + 1, puuid, teamId: p?.teamId ?? (i < 5 ? 100 : 200), champion: p?.champion ?? `Joueur ${i + 1}`, role: p?.role ?? null };
   });
   const teamOf = (pid: number) => participants.find((p) => p.pid === pid)?.teamId ?? 0;
-  const out: CompactTimeline = { v: 1, participants, frames: [], kills: [], objectives: [], wards: [] };
+  const out: CompactTimeline = { v: 2, participants, frames: [], kills: [], objectives: [], wards: [], buys: [] };
   for (const f of t.info.frames) {
     const pos: Record<string, Pos> = {};
     const gold: Record<string, number> = {};
     const level: Record<string, number> = {};
     const cur: Record<string, number> = {};
+    const cs: Record<string, number> = {};
     for (const [pid, pf] of Object.entries(f.participantFrames ?? {})) {
       if (pf.position) pos[pid] = { x: pf.position.x, y: pf.position.y };
       if (pf.totalGold != null) gold[pid] = pf.totalGold;
       if (pf.level != null) level[pid] = pf.level;
       if (pf.currentGold != null) cur[pid] = pf.currentGold;
+      if (pf.minionsKilled != null || pf.jungleMinionsKilled != null) cs[pid] = (pf.minionsKilled ?? 0) + (pf.jungleMinionsKilled ?? 0);
     }
-    out.frames.push({ t: f.timestamp, pos, gold, level, cur });
+    out.frames.push({ t: f.timestamp, pos, gold, level, cur, cs });
     for (const e of f.events) {
       if (e.type === "CHAMPION_KILL" && e.position && e.victimId)
         out.kills.push({ t: e.timestamp, pos: e.position, killer: e.killerId ?? 0, victim: e.victimId, assists: e.assistingParticipantIds ?? [] });
@@ -67,6 +73,7 @@ export function compactTimeline(t: RawTimeline, players: { puuid: string; teamId
         // teamId = équipe PROPRIÉTAIRE du bâtiment détruit → l'objectif profite à l'autre équipe.
         out.objectives.push({ t: e.timestamp, kind: e.buildingType === "INHIBITOR_BUILDING" ? "INHIBITOR" : "TOWER", team: e.teamId === 100 ? 200 : 100 });
       else if (e.type === "WARD_PLACED" && e.creatorId) out.wards.push({ t: e.timestamp, pid: e.creatorId });
+      else if (e.type === "ITEM_PURCHASED" && e.participantId) out.buys!.push({ t: e.timestamp, pid: e.participantId });
     }
   }
   return out;

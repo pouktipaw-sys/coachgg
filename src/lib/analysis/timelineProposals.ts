@@ -2,6 +2,7 @@
 // schéma sur la minimap (position de la mort, ennemis, alliés, direction de repli).
 import type { Proposal } from "./rules";
 import { deathFlags, diagnoseDeath, toMinimap, type Absence, type DeathFacts, type Trail } from "@/lib/riot/timelineFacts";
+import type { MacroMistake } from "@/lib/riot/macroFacts";
 
 export const TIMELINE_VERSION = "riot-timeline-1.0.0";
 
@@ -103,6 +104,69 @@ export function absenceProposal(a: Absence, opts: { videoMs: number; durationMs:
     },
     annotations,
     evidence: { type: "riot_absence", eventVideoMs: v, flags: [a.kind === "FIGHT" ? "absent_fight" : "absent_objective"], absence: { kind: a.kind, distance: a.distance, estimated: a.estimated } },
+    sheet: null,
+  };
+}
+
+const MACRO_TEXT: Record<MacroMistake["kind"], { category: Proposal["recommendation"]["category"]; interpretation: string; alternative: string; conditions: string }> = {
+  MISSED_BACK: {
+    category: "RESOURCES",
+    interpretation: "Garder beaucoup d'or sans rentrer, c'est jouer plusieurs minutes avec un objet de retard sur tes adversaires : chaque combat devient plus dur. À vérifier : tu attendais peut-être un objectif ou une vague à pousser.",
+    alternative: "Pousser la vague puis rentrer acheter",
+    conditions: "dès que tu as l'or d'un objet important et que ta vague est poussée",
+  },
+  BAD_BACK: {
+    category: "ROTATIONS",
+    interpretation: "Tu es rentré juste avant un objectif : ton équipe a dû le céder ou le jouer en infériorité. À vérifier : tu étais peut-être obligé de rentrer (vie ou mana très bas).",
+    alternative: "Rentrer une minute plus tôt, ou juste après l'objectif",
+    conditions: "si ta vie et ton mana permettent de tenir jusqu'à l'objectif",
+  },
+  CS_DROP: {
+    category: "RESOURCES",
+    interpretation: "Plusieurs minutes de suite sans tuer de sbires alors que tu étais en vie : c'est de l'or et de l'expérience laissés sur la carte. À vérifier : tu faisais peut-être une action utile (objectif, déplacement pour un kill).",
+    alternative: "Pousser la vague avant de partir, revenir vite sur ta voie",
+    conditions: "quand aucun objectif ni combat ne demande ta présence",
+  },
+};
+
+/** Erreur sans mort (retour raté, retour au mauvais moment, sbires perdus) → moment de coaching avec schéma minimap. */
+export function macroProposal(m: MacroMistake, opts: { videoMs: number; durationMs: number; minimap: boolean; trails?: Trail[] }): Proposal | null {
+  const v = opts.videoMs;
+  if (v < 3000 || v > opts.durationMs - 3000) return null;
+  const txt = MACRO_TEXT[m.kind];
+  const decisionMs = v;
+  const contextStartMs = Math.max(0, decisionMs - 6000);
+  const endMs = Math.min(opts.durationMs, decisionMs + 10_000);
+  const win = { startMs: Math.max(0, decisionMs - 1500), endMs };
+  const annotations: Proposal["annotations"] = [];
+  if (opts.minimap && m.myPos) {
+    annotations.push({ type: "highlight", style: "ally", space: "MINIMAP", ...win, geometry: { at: toMinimap(m.myPos), r: 0.05 }, label: "Toi" });
+    if (m.where) {
+      annotations.push({ type: "zone", style: "danger", space: "MINIMAP", ...win, geometry: { center: toMinimap(m.where), r: 0.08 }, label: "Objectif perdu" });
+      annotations.push({ type: "arrow", style: "alternative", space: "MINIMAP", startMs: decisionMs, endMs, geometry: { from: toMinimap(m.myPos), to: toMinimap(m.where) }, label: "Rester pour l'objectif" });
+    }
+    annotations.push(...trailAnnotations(opts.trails ?? [], opts.durationMs));
+  }
+  return {
+    recommendation: {
+      kind: "MISTAKE",
+      category: txt.category,
+      title: m.title.slice(0, 110),
+      contextStartMs,
+      slowdownStartMs: Math.max(contextStartMs, decisionMs - 1500),
+      decisionMs,
+      endMs,
+      slowdownRate: 0.5,
+      observations: m.observations,
+      interpretation: txt.interpretation,
+      alternatives: [{ label: txt.alternative, conditions: txt.conditions, limits: "mesuré minute par minute par la timeline Riot" }],
+      confidence: "MEDIUM",
+      confidenceReason: "Or, sbires, achats et objectifs mesurés par la timeline Riot (une mesure d'or et de sbires par minute).",
+      advice: m.advice,
+      clipId: null,
+    },
+    annotations,
+    evidence: { type: "riot_macro", eventVideoMs: v, flags: [m.flag], macro: { kind: m.kind, ...m.facts } },
     sheet: null,
   };
 }

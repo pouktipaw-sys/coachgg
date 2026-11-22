@@ -25,6 +25,13 @@ export function momentChips(evidence: unknown): Chip[] {
     chips.push({ text: e.absence.kind === "FIGHT" ? "Combat perdu sans toi" : "Objectif perdu", tone: "bad" });
     return chips;
   }
+  const mac = ((evidence ?? {}) as { type?: string; macro?: { kind: string; gold?: number; minutes?: number; csLost?: number; objective?: string; afterSec?: number } }).macro;
+  if (e.type === "riot_macro" && mac) {
+    if (mac.kind === "MISSED_BACK") chips.push({ text: `${fr(mac.gold ?? 0)} or gardé`, tone: "bad" }, { text: `${mac.minutes} min sans rentrer`, tone: "warn" });
+    if (mac.kind === "BAD_BACK") chips.push({ text: "Retour à la base", tone: "warn" }, { text: `${cap(mac.objective ?? "objectif")} perdu (+${mac.afterSec} s)`, tone: "bad" });
+    if (mac.kind === "CS_DROP") chips.push({ text: `−${mac.csLost} sbires`, tone: "bad" }, { text: `≈ −${fr((mac.csLost ?? 0) * 20)} or`, tone: "warn" }, { text: `${mac.minutes} min`, tone: "info" });
+    return chips;
+  }
   const f = e.facts;
   if (!f) return chips;
   const allies = (f.alliesNear?.length ?? 0) + 1;

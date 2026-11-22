@@ -118,6 +118,23 @@ Sinon, l'étape l'indique et les réglages manuels (encadré « Informations »,
 - Chaque moment : schéma minimap (ta position, le combat ou l'objectif, flèche « Rejoindre »), conseil, clip
   « Occasion manquée ». L'interprétation rappelle qu'il faut vérifier (tu faisais peut-être autre chose d'utile).
 
+### Erreurs sans mort : retours à la base et sbires (`src/lib/riot/macroFacts.ts`)
+
+Mesurées par la timeline Riot v2 (or en poche, sbires et position une fois par minute ; achats et objectifs à la seconde).
+Une timeline stockée en v1 (sans sbires ni achats) est récupérée à nouveau si la clé Riot le permet.
+
+| Erreur | Règle | Ce qui est montré |
+|---|---|---|
+| **Retour raté** | ≥ 1 500 or en poche, en vie, pendant ≥ 2 min sans passer à la boutique (après 3:00, hors 2 dernières minutes) | or gardé, durée, mort éventuelle avec cet or |
+| **Retour au mauvais moment** | achat à la base dans les 75 s avant un objectif majeur pris par l'ennemi | remplace le moment « objectif pris loin de toi » (même événement, cause plus précise) ; schéma : ta position, l'objectif, flèche « Rester pour l'objectif » |
+| **Sbires perdus** | ≥ 2 minutes de suite à ≤ 40 % de ton rythme habituel de la partie (médiane), en vie, perte ≥ 8 sbires ; support ignoré ; une minute basse seule = retour à la base normal | sbires perdus, or estimé (20 or par sbire), trajet estimé sur la minimap |
+| **Bilan de voie** | écart de sbires et d'or avec l'adversaire du même rôle à 10 et 15 min | première ligne des constats du bilan |
+
+Chaque erreur devient un moment « Erreur » (catégorie Ressources ou Rotations, confiance moyenne), un clip, des pastilles
+chiffrées, et compte dans la gravité et les erreurs récurrentes du bilan. Limites : une mesure d'or et de sbires par
+minute ; une absence de sbires peut être un choix utile (objectif, déplacement pour un kill) : l'interprétation le rappelle.
+Le placement fin en combat (sans mort) ne se mesure pas avec la timeline : seule l'analyse des images (IA) peut l'aborder.
+
 ### IA : minimap agrandie
 
 Quand la zone minimap est connue, Claude reçoit en plus une image 512 × 512 de la minimap 2,5 s avant la mort, avec la

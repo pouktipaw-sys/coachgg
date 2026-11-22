@@ -17,7 +17,8 @@ import { AI_MOMENT_RESERVE_MICROS, AI_VERSION, AiAnalysisError, aiBudgetMicros, 
 import { requestRecap } from "../recap";
 import { ensureTimelineFacts } from "../riot/import";
 import { absences, deathFacts, deathTrailPlayers, myDeaths, trails } from "@/lib/riot/timelineFacts";
-import { TIMELINE_VERSION, absenceProposal, timelineProposal } from "@/lib/analysis/timelineProposals";
+import { TIMELINE_VERSION, absenceProposal, macroProposal, timelineProposal } from "@/lib/analysis/timelineProposals";
+import { laneSentence, laneSummary, macroMistakes } from "@/lib/riot/macroFacts";
 import { alignOffset, checkOffset, findMatchForRecording, recordingTimeHints } from "@/lib/analysis/autoSync";
 import { ANNOTATION_SCHEMA_VERSION } from "@/lib/annotations/schema";
 
@@ -200,7 +201,8 @@ export async function analyzeRecording(job: AnalysisJob) {
     // 8 a. Timeline Riot : morts réelles du joueur, faits mesurés et schéma minimap (vidéo liée et synchronisée).
     const extraDeaths: { type: "grey_screen"; startMs: number; endMs: number }[] = [];
     const falseGrey: number[] = []; // écrans grisés démentis par la timeline (temps vidéo)
-    const absenceClips: { kind: "MISSED_OPPORTUNITY"; title: string; startMs: number; endMs: number; eventMs: number }[] = [];
+    const absenceClips: { kind: "MISSED_OPPORTUNITY" | "MISTAKE"; title: string; startMs: number; endMs: number; eventMs: number }[] = [];
+    let laneLine: string | null = null;
     await step("Timeline Riot (morts et positions réelles)", async () => {
       if (!rec.matchId) return { value: 0, status: "skipped", note: "Vidéo non liée à un match." };
       if (rec.gameStartOffsetMs == null) return { value: 0, status: "skipped", note: "Vidéo non synchronisée avec l'horloge du jeu (onglet « Synchro »)." };
@@ -245,10 +247,35 @@ export async function analyzeRecording(job: AnalysisJob) {
         absenceClips.push({ kind: "MISSED_OPPORTUNITY", title: p.recommendation.title, startMs: p.recommendation.contextStartMs, endMs: p.recommendation.endMs, eventMs: p.recommendation.decisionMs });
         missed++;
       }
+      // Erreurs sans mort : retour à la base raté ou mal placé, sbires perdus (or, achats, sbires minute par minute).
+      const mePid = ct.participants.find((x) => x.puuid === me.puuid)!.pid;
+      const macroCount = { MISSED_BACK: 0, BAD_BACK: 0, CS_DROP: 0 };
+      for (const m of macroMistakes(ct, me.puuid)) {
+        // Objectif perdu juste après un retour à la base : l'explication « retour au mauvais moment » remplace
+        // le moment « objectif pris pendant que tu étais loin » (même événement, cause plus précise).
+        if (m.kind === "BAD_BACK") {
+          const dup = proposals.findIndex((x) => (x.evidence as { type?: string }).type === "riot_absence" && Math.abs((x.evidence as { eventVideoMs: number }).eventVideoMs - (m.endT + rec.gameStartOffsetMs!)) <= 45_000);
+          if (dup >= 0) {
+            const gone = proposals.splice(dup, 1)[0]!;
+            const ci = absenceClips.findIndex((c) => c.title === gone.recommendation.title);
+            if (ci >= 0) absenceClips.splice(ci, 1);
+            missed--;
+          }
+        }
+        const trailList = minimap && m.kind === "CS_DROP" ? trails(ct, [{ pid: mePid, style: "actual", label: "Toi (trajet estimé)" }], m.t, Math.min(m.endT, m.t + 60_000), rec.gameStartOffsetMs!) : [];
+        const p = macroProposal(m, { videoMs: m.t + rec.gameStartOffsetMs!, durationMs: rec.durationMs!, minimap: !!minimap, trails: trailList });
+        if (!p) continue;
+        proposals.push(p);
+        absenceClips.push({ kind: "MISTAKE", title: p.recommendation.title, startMs: p.recommendation.contextStartMs, endMs: p.recommendation.endMs, eventMs: p.recommendation.decisionMs });
+        macroCount[m.kind]++;
+      }
+      laneLine = laneSentence(laneSummary(ct, me.puuid));
+      const macroN = macroCount.MISSED_BACK + macroCount.BAD_BACK + macroCount.CS_DROP;
+      const csNote = ct.frames.some((f) => f.cs) ? "" : " (timeline ancienne sans sbires : reconnecte la clé Riot pour l'actualiser)";
       proposals.sort((a, b) => a.recommendation.decisionMs - b.recommendation.decisionMs);
       return {
-        value: added + missed,
-        note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image${falseGrey.length ? `, ${falseGrey.length} fausse(s) détection(s) d'écran grisé écartée(s)` : ""}) ; ${missed} moment(s) sans mort (combat perdu ou objectif raté loin de toi)${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.`,
+        value: added + missed + macroN,
+        note: `${added} mort(s) réelle(s) analysée(s) avec les faits de la partie (${merged} confirmée(s) par l'image${falseGrey.length ? `, ${falseGrey.length} fausse(s) détection(s) d'écran grisé écartée(s)` : ""}) ; ${missed} moment(s) sans mort (combat perdu ou objectif raté loin de toi) ; erreurs sans mort : ${macroCount.MISSED_BACK} retour(s) raté(s), ${macroCount.BAD_BACK} retour(s) au mauvais moment, ${macroCount.CS_DROP} période(s) de sbires perdus${csNote}${laneLine ? ` ; ${laneLine}` : ""}${minimap ? "" : " ; zone minimap non définie : pas de schéma des positions"}.`,
       };
     });
 
@@ -361,7 +388,7 @@ export async function analyzeRecording(job: AnalysisJob) {
             provenance: "AUTOMATIC",
             analysisVersion: (p.evidence as { ai?: { model: string } }).ai
               ? `${AI_VERSION} (${(p.evidence as { ai: { model: string } }).ai.model})`
-              : ["riot_death", "riot_absence"].includes((p.evidence as { type?: string }).type ?? "")
+              : ["riot_death", "riot_absence", "riot_macro"].includes((p.evidence as { type?: string }).type ?? "")
                 ? TIMELINE_VERSION
                 : RULES_VERSION,
             status: "DRAFT",
@@ -413,7 +440,7 @@ export async function analyzeRecording(job: AnalysisJob) {
       await prisma.clip.deleteMany({ where: { recordingId: rec.id, provenance: "AUTOMATIC", favorite: false, personalNote: null, exportStatus: null } });
       const kept = await prisma.clip.findMany({ where: { recordingId: rec.id }, select: { kind: true, startMs: true, endMs: true } });
       // Les moments « absent » (rotations ratées, mesurées par la timeline) sont découpés avec les morts.
-      const wanted: { kind: "DEATH" | "FIGHT" | "MISSED_OPPORTUNITY"; title: string; startMs: number; endMs: number; eventMs: number }[] = [
+      const wanted: { kind: "DEATH" | "FIGHT" | "MISSED_OPPORTUNITY" | "MISTAKE"; title: string; startMs: number; endMs: number; eventMs: number }[] = [
         ...autoClipsFrom(
           [...out.events.filter((e) => !(e.type === "grey_screen" && falseGrey.some((f) => Math.abs(f - e.startMs) <= 2500))), ...extraDeaths],
           rec.durationMs!,
@@ -430,7 +457,8 @@ export async function analyzeRecording(job: AnalysisJob) {
         });
       const deaths = fresh.filter((c) => c.kind === "DEATH").length;
       const missedN = fresh.filter((c) => c.kind === "MISSED_OPPORTUNITY").length;
-      return { value: fresh.length, note: `${fresh.length} clip(s) créé(s) : ${deaths} mort(s), ${missedN} rotation(s) ratée(s), ${fresh.length - deaths - missedN} combat(s).` };
+      const macroN = fresh.filter((c) => c.kind === "MISTAKE").length;
+      return { value: fresh.length, note: `${fresh.length} clip(s) créé(s) : ${deaths} mort(s), ${missedN} rotation(s) ratée(s), ${macroN} erreur(s) sans mort (retours, sbires), ${fresh.length - deaths - missedN - macroN} combat(s).` };
     });
 
     // 12. Bilan écrit de la partie (IA si disponible, sinon construit à partir des moments).
@@ -452,6 +480,9 @@ export async function analyzeRecording(job: AnalysisJob) {
       }));
       const deaths = moments.filter((m) => /mort|écran grisé/i.test(m.title)).length;
       let body = gameReportRules(lite, { linked: !!rec.matchId, minimap: !!minimap, videoMs: rec.durationMs });
+      // Bilan de voie mesuré (écart de sbires et d'or avec l'adversaire direct) en tête des constats.
+      const withLane = (b: typeof body) => (laneLine && !b.patterns.includes(laneLine) ? { ...b, patterns: [laneLine, ...b.patterns].slice(0, 4) } : b);
+      body = withLane(body);
       let source: GameReport["source"] = "rules";
       let model: string | undefined;
       const budget = aiBudgetMicros();
@@ -465,7 +496,7 @@ export async function analyzeRecording(job: AnalysisJob) {
             : null;
           const r = await gameReportAi(lite, stats, aiDeps.client());
           costMicros += r.costMicros;
-          body = r.report;
+          body = withLane(r.report);
           source = "ai";
           model = r.model;
         } catch (e) {

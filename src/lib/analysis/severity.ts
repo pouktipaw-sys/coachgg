@@ -5,7 +5,7 @@ type M = { kind: string; provenance: string; confidence: string; autoEvidence?: 
 const FLAG_WEIGHT: Record<string, number> = {
   objective_lost: 4, // la mort a coûté un objectif
   absent_fight: 3,
-  absent_objective: 3,
+  absent_objective: 3, bad_back: 3, missed_back: 2, cs_drop: 2,
   level: 2,
   isolated: 2,
   outnumbered: 1,
