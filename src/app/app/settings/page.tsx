@@ -5,6 +5,8 @@ import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
 import { formatRank, type RankEntry } from "@/components/stats";
 import { integrationStatus } from "@/lib/env";
+import { ChangeEmailForm, ChangePasswordForm, SessionsForm } from "@/components/settings/AccountForms";
+import { countSessions } from "@/server/auth/service";
 
 export const metadata = { title: "Paramètres" };
 
@@ -16,6 +18,7 @@ export default async function SettingsPage() {
   ]);
   const riot = integrationStatus().riotApi === "configured";
   const mailer = integrationStatus().mailer;
+  const sessions = await countSessions(user.id);
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader title="Paramètres" subtitle={user.email} />
@@ -70,6 +73,14 @@ export default async function SettingsPage() {
           <li>Les fichiers vidéo sont stockés sur le serveur de cette instance, servis uniquement après vérification de vos droits.</li>
           <li>Si vous choisissez une durée de conservation, le worker supprime automatiquement (chaque heure) les vidéos plus anciennes, avec leurs moments et annotations.</li>
         </ul>
+      </section>
+
+      <section className="card space-y-4" id="compte">
+        <h2 className="h2">Compte CoachGG</h2>
+        <p className="text-sm text-muted">Identifiants de connexion à CoachGG (indépendants de ton compte Riot). Ton pseudo se change dans « Profil et préférences ».</p>
+        <ChangeEmailForm email={user.email} />
+        <div className="border-t border-line pt-4"><ChangePasswordForm /></div>
+        <div className="border-t border-line pt-4"><SessionsForm count={sessions} /></div>
       </section>
 
       <section className="card space-y-3">

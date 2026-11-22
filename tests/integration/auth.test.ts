@@ -45,3 +45,46 @@ describe("authentification", () => {
     await expect(requestPasswordReset("personne@test.dev")).resolves.toBeUndefined();
   });
 });
+
+describe("gestion du compte connecté", async () => {
+  const { changePassword, changeEmail, logoutOtherSessions, countSessions } = await import("@/server/auth/service");
+  const uniq = () => Math.random().toString(36).slice(2, 8);
+
+  it("changer le mot de passe : exige l'actuel, garde cette session, ferme les autres, prévient par email", async () => {
+    const email = `pw-${uniq()}@test.dev`;
+    const { user, session } = await register({ email, password: "ancien-motdepasse", displayName: "Pw" });
+    const other = await login({ email, password: "ancien-motdepasse" });
+    await expect(changePassword(user.id, session.token, { currentPassword: "faux-motdepasse", newPassword: "nouveau-motdepasse" })).rejects.toMatchObject({ status: 403 });
+    await expect(changePassword(user.id, session.token, { currentPassword: "ancien-motdepasse", newPassword: "court" })).rejects.toMatchObject({ status: 400 });
+    await changePassword(user.id, session.token, { currentPassword: "ancien-motdepasse", newPassword: "nouveau-motdepasse" });
+    expect(await userFromToken(session.token)).not.toBeNull();
+    expect(await userFromToken(other.session.token)).toBeNull();
+    await expect(login({ email, password: "ancien-motdepasse" })).rejects.toMatchObject({ status: 401 });
+    expect((await login({ email, password: "nouveau-motdepasse" })).user.id).toBe(user.id);
+    expect(devOutbox.some((m) => m.to === email && /mot de passe modifié/.test(m.subject))).toBe(true);
+  });
+
+  it("changer l'email : mot de passe requis, adresse libre, ancienne adresse prévenue", async () => {
+    const email = `em-${uniq()}@test.dev`;
+    const taken = `taken-${uniq()}@test.dev`;
+    await register({ email: taken, password: "motdepasse-long", displayName: "Taken" });
+    const { user } = await register({ email, password: "motdepasse-long", displayName: "Em" });
+    await expect(changeEmail(user.id, { email: `x-${uniq()}@test.dev`, password: "mauvais" })).rejects.toMatchObject({ status: 403 });
+    await expect(changeEmail(user.id, { email: taken, password: "motdepasse-long" })).rejects.toMatchObject({ status: 409 });
+    const next = `New-${uniq()}@Test.dev`;
+    await changeEmail(user.id, { email: next, password: "motdepasse-long" });
+    expect((await login({ email: next, password: "motdepasse-long" })).user.id).toBe(user.id);
+    expect(devOutbox.some((m) => m.to === email && /adresse email modifiée/.test(m.subject))).toBe(true);
+  });
+
+  it("déconnecter les autres appareils", async () => {
+    const email = `se-${uniq()}@test.dev`;
+    const { user, session } = await register({ email, password: "motdepasse-long", displayName: "Se" });
+    await login({ email, password: "motdepasse-long" });
+    await login({ email, password: "motdepasse-long" });
+    expect(await countSessions(user.id)).toBe(3);
+    expect((await logoutOtherSessions(user.id, session.token)).closed).toBe(2);
+    expect(await userFromToken(session.token)).not.toBeNull();
+    expect(await countSessions(user.id)).toBe(1);
+  });
+});

@@ -431,3 +431,21 @@ test("paramètres : champions préférés en autocomplétion et email de test", 
   await page.click("button:has-text(\"M'envoyer un email de test\")");
   await expect(page.getByText(/Envoi demandé|console du serveur/)).toBeVisible();
 });
+
+test("compte CoachGG : changer le mot de passe depuis les paramètres puis se reconnecter", async ({ page }) => {
+  const email = await register(page, "Compte");
+  await page.goto("/app/settings#compte");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Mot de passe actuel", { exact: true }).fill("motdepasse-e2e");
+  await page.getByLabel("Nouveau mot de passe", { exact: true }).fill("nouveau-motdepasse-e2e");
+  await page.getByLabel("Confirmer le nouveau mot de passe").fill("nouveau-motdepasse-e2e");
+  await page.click("button:has-text('Changer le mot de passe')");
+  await expect(page.getByText("Mot de passe modifié.", { exact: false })).toBeVisible();
+  await page.locator("#compte").screenshot({ path: "test-results/compte.png" });
+  await page.click("text=Se déconnecter");
+  await page.goto("/login");
+  await page.fill("#email", email);
+  await page.fill("#password", "nouveau-motdepasse-e2e");
+  await page.click("form button.btn-primary");
+  await page.waitForURL("**/app**");
+});

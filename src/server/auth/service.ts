@@ -82,3 +82,53 @@ export async function resetPassword(raw: unknown) {
     prisma.session.deleteMany({ where: { userId: rec.userId } }), // déconnecte toutes les sessions
   ]);
 }
+
+// ── Gestion du compte connecté ──────────────────────────────────────────────
+
+async function checkPassword(userId: string, password: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!(await verifyPassword(password, user.passwordHash))) throw new HttpError(403, "wrong_password", "Mot de passe actuel incorrect.");
+  return user;
+}
+
+/** Nouveau mot de passe : vérifie l'actuel, déconnecte les autres appareils, prévient par email. */
+export async function changePassword(userId: string, currentToken: string | undefined, raw: unknown) {
+  const input = z.object({ currentPassword: z.string().min(1).max(200), newPassword: z.string().max(200) }).parse(raw);
+  const user = await checkPassword(userId, input.currentPassword);
+  const weak = validatePasswordStrength(input.newPassword);
+  if (weak) throw badRequest(weak);
+  if (input.newPassword === input.currentPassword) throw badRequest("Le nouveau mot de passe doit être différent de l'actuel.");
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(input.newPassword) } }),
+    prisma.session.deleteMany({ where: { userId, ...(currentToken ? { id: { not: sha256(currentToken) } } : {}) } }),
+  ]);
+  await sendMail({
+    to: user.email,
+    subject: "CoachGG — mot de passe modifié",
+    text: "Le mot de passe de ton compte CoachGG vient d'être modifié. Si ce n'est pas toi, utilise « Mot de passe oublié » tout de suite.",
+  });
+}
+
+/** Nouvelle adresse email : confirmée par le mot de passe ; l'ancienne adresse est prévenue. */
+export async function changeEmail(userId: string, raw: unknown) {
+  const input = z.object({ email: z.string().trim().toLowerCase().email().max(200), password: z.string().min(1).max(200) }).parse(raw);
+  const user = await checkPassword(userId, input.password);
+  if (input.email === user.email) throw badRequest("C'est déjà l'adresse de ton compte.");
+  if (await prisma.user.findUnique({ where: { email: input.email } })) throw new HttpError(409, "email_taken", "Un compte existe déjà avec cet email.");
+  await prisma.user.update({ where: { id: userId }, data: { email: input.email } });
+  await sendMail({
+    to: user.email,
+    subject: "CoachGG — adresse email modifiée",
+    text: `L'adresse de ton compte CoachGG a été remplacée par ${input.email}. Si ce n'est pas toi, réponds à ce message ou contacte le support.`,
+  });
+  return { email: input.email };
+}
+
+/** Sessions ouvertes (appareils connectés) et déconnexion des autres. */
+export async function countSessions(userId: string) {
+  return prisma.session.count({ where: { userId, expiresAt: { gt: new Date() } } });
+}
+export async function logoutOtherSessions(userId: string, currentToken: string | undefined) {
+  const r = await prisma.session.deleteMany({ where: { userId, ...(currentToken ? { id: { not: sha256(currentToken) } } : {}) } });
+  return { closed: r.count };
+}
