@@ -1,18 +1,27 @@
 @import "tailwindcss";
 
+/* ═══════════════ CoachGG — design system « néon esport » ═══════════════
+   Noir bleuté profond, violet électrique + magenta, touches de cyan.
+   Couleurs sémantiques FIXES dans toute l'app (et dans les clips rendus par analysis/render_clip.py) :
+   toi = doré (gold), ennemis = rouge (loss), alliés = bleu (ally), bonne option = vert (win). */
 @theme {
-  --color-bg: #0a0d14;
-  --color-panel: #111622;
-  --color-panel-2: #171d2b;
-  --color-line: #232b3b;
-  --color-muted: #8b95a8;
-  --color-text: #e6e9ef;
-  --color-accent: #4c9dff;
-  --color-accent-2: #7cc4ff;
+  --color-bg: #080812;
+  --color-panel: #111022;
+  --color-panel-2: #19142d;
+  --color-line: #30234b;
+  --color-muted: #a7a0bd;
+  --color-text: #f5f2ff;
+  --color-accent: #922eff; /* violet électrique : actions principales */
+  --color-accent-2: #c48bff; /* violet clair : liens et texte d'accent (contraste AA sur fond sombre) */
+  --color-magenta: #d34aff;
+  --color-cyan: #59d5ff;
+  --color-gold: #fbbf24; /* le joueur */
+  --color-ally: #60a5fa; /* alliés */
   --color-win: #34d399;
   --color-loss: #f87171;
   --color-warn: #fbbf24;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Chakra Petch", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 html,
@@ -23,41 +32,116 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Ambiance : halos violet/magenta en haut, grille hextech très discrète */
+body {
+  background-image:
+    radial-gradient(1200px 520px at 12% -10%, rgb(146 46 255 / 0.20), transparent 60%),
+    radial-gradient(900px 480px at 95% -5%, rgb(211 74 255 / 0.14), transparent 60%),
+    radial-gradient(700px 400px at 50% 110%, rgb(89 213 255 / 0.06), transparent 60%),
+    linear-gradient(rgb(255 255 255 / 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.018) 1px, transparent 1px);
+  background-size: auto, auto, auto, 44px 44px, 44px 44px;
+  background-attachment: fixed;
+}
+
+::selection { background: rgb(146 46 255 / 0.45); }
+
 :focus-visible {
-  outline: 2px solid var(--color-accent-2);
+  outline: 2px solid var(--color-cyan);
   outline-offset: 2px;
 }
 
+/* Barres de défilement discrètes */
+* { scrollbar-width: thin; scrollbar-color: #30234b transparent; }
+
+/* ─────────── Surfaces ─────────── */
 @utility card {
-    @apply rounded-xl border border-line bg-panel p-5;
-  }
+  @apply rounded-2xl border border-line/80 p-5 backdrop-blur-sm;
+  background: linear-gradient(180deg, rgb(25 20 45 / 0.72), rgb(17 16 34 / 0.78));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 30px -18px rgb(0 0 0 / 0.8);
+}
+/* Carte mise en avant : bordure lumineuse dégradée violet → magenta */
+@utility card-glow {
+  @apply card;
+  border-color: transparent;
+  background:
+    linear-gradient(180deg, rgb(27 20 50 / 0.92), rgb(17 16 34 / 0.95)) padding-box,
+    linear-gradient(135deg, rgb(146 46 255 / 0.85), rgb(211 74 255 / 0.35) 40%, rgb(89 213 255 / 0.35)) border-box;
+  box-shadow: 0 0 0 1px rgb(146 46 255 / 0.08), 0 20px 50px -25px rgb(146 46 255 / 0.55);
+}
+/* Carte interactive (liens) : survol lumineux */
+@utility card-hover {
+  @apply transition-all duration-200;
+  &:hover { border-color: rgb(146 46 255 / 0.55); box-shadow: 0 0 0 1px rgb(146 46 255 / 0.25), 0 16px 40px -22px rgb(146 46 255 / 0.6); transform: translateY(-1px); }
+}
+
+/* ─────────── Boutons ─────────── */
 @utility btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
-  }
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-150 select-none disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98];
+}
 @utility btn-primary {
-    @apply btn bg-accent text-white hover:bg-accent/85;
-  }
+  @apply btn text-white;
+  background: linear-gradient(135deg, #922eff, #b33dff 55%, #d34aff);
+  box-shadow: 0 8px 24px -10px rgb(146 46 255 / 0.85), inset 0 1px 0 rgb(255 255 255 / 0.2);
+  &:hover:not(:disabled) { filter: brightness(1.12); box-shadow: 0 10px 30px -8px rgb(211 74 255 / 0.85), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+}
 @utility btn-ghost {
-    @apply btn border border-line bg-panel-2 text-text hover:border-accent/60;
-  }
+  @apply btn border border-line bg-panel-2/80 text-text hover:border-accent/70 hover:bg-panel-2 hover:text-white;
+}
+@utility btn-cyan {
+  @apply btn border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20;
+}
 @utility btn-danger {
-    @apply btn border border-loss/40 bg-loss/10 text-loss hover:bg-loss/20;
-  }
+  @apply btn border border-loss/40 bg-loss/10 text-loss hover:bg-loss/20;
+}
+
+/* ─────────── Formulaires ─────────── */
 @utility input {
-    @apply w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-text placeholder:text-muted/70 focus:border-accent focus:outline-none;
-  }
+  @apply w-full rounded-xl border border-line bg-bg/60 px-3 py-2 text-sm text-text placeholder:text-muted/70 transition-colors focus:border-cyan/70 focus:outline-none;
+}
 @utility label {
-    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-muted;
-  }
+  @apply mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted;
+}
+
+/* ─────────── Typographie ─────────── */
 @utility badge {
-    @apply inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium;
-  }
+  @apply inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-medium;
+}
 @utility h1 {
-    @apply text-2xl font-semibold tracking-tight;
-  }
+  @apply text-2xl font-bold tracking-tight md:text-3xl;
+  font-family: var(--font-display);
+}
 @utility h2 {
-    @apply text-lg font-semibold;
-  }
+  @apply text-lg font-semibold tracking-tight;
+  font-family: var(--font-display);
+}
+@utility font-display {
+  font-family: var(--font-display);
+}
+@utility eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-2;
+}
+@utility text-gradient {
+  background: linear-gradient(100deg, #f5f2ff 10%, #d9b4ff 45%, #d34aff 75%, #59d5ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility stat-num {
+  @apply text-3xl font-bold tabular-nums leading-none;
+  font-family: var(--font-display);
+}
+
+/* ─────────── Effets ─────────── */
+@utility glow-violet {
+  box-shadow: 0 0 0 1px rgb(146 46 255 / 0.35), 0 0 24px -4px rgb(146 46 255 / 0.65);
+}
+@utility skeleton {
+  @apply rounded-lg;
+  background: linear-gradient(90deg, rgb(48 35 75 / 0.35) 25%, rgb(146 46 255 / 0.18) 37%, rgb(48 35 75 / 0.35) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
 
 /* Animations discrètes, désactivées si l'utilisateur le demande */
 @keyframes ripple {
@@ -68,8 +152,22 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
 .anim-ripple { animation: ripple 1.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
 .anim-pulse { animation: pulse-soft 1.6s ease-in-out infinite; }
+.anim-rise { animation: rise 0.35s ease-out both; }
+.anim-float { animation: float-slow 6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .anim-ripple, .anim-pulse { animation: none; }
+  .anim-ripple, .anim-pulse, .anim-rise, .anim-float, .skeleton { animation: none; }
 }

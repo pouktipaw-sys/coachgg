@@ -21,9 +21,9 @@ export const RELIABILITY: Record<string, { label: string; tone: string }> = {
 export function ScorePill({ score, reliability }: { score: number | null; reliability?: string | null }) {
   if (score == null)
     return <span className="badge border-line text-muted" title="Données insuffisantes pour une note">—</span>;
-  const tone = score >= 7 ? "border-win/50 text-win" : score >= 4.5 ? "border-accent/50 text-accent-2" : "border-warn/50 text-warn";
+  const tone = score >= 7 ? "border-win/50 bg-win/10 text-win shadow-[0_0_12px_-4px_rgb(52_211_153/0.8)]" : score >= 4.5 ? "border-accent/50 bg-accent/10 text-accent-2" : "border-warn/50 bg-warn/10 text-warn";
   return (
-    <span className={`badge ${tone} font-mono`} title={reliability ? RELIABILITY[reliability]?.label : undefined}>
+    <span className={`badge ${tone} font-display text-sm font-bold tabular-nums`} title={reliability ? RELIABILITY[reliability]?.label : undefined}>
       {score.toFixed(1)}
       {reliability === "low" && <span aria-label="fiabilité faible">*</span>}
     </span>
@@ -41,10 +41,10 @@ export function ComponentBars({ components }: { components: ComponentResult[] })
               {c.available ? `${c.display} · ${c.score}/10 · poids ${Math.round(c.weight * 100)} %` : "non mesuré"}
             </span>
           </div>
-          <div className="mt-1 h-2 overflow-hidden rounded bg-panel-2" aria-hidden>
+          <div className="mt-1 h-2 overflow-hidden rounded-full bg-bg/70" aria-hidden>
             {c.available && (
               <div
-                className={`h-full ${c.score! >= 7 ? "bg-win" : c.score! >= 4.5 ? "bg-accent" : "bg-warn"}`}
+                className={`h-full rounded-full ${c.score! >= 7 ? "bg-gradient-to-r from-win/70 to-win" : c.score! >= 4.5 ? "bg-gradient-to-r from-accent to-magenta" : "bg-gradient-to-r from-warn/70 to-warn"}`}
                 style={{ width: `${(c.score! / 10) * 100}%` }}
               />
             )}
@@ -57,18 +57,24 @@ export function ComponentBars({ components }: { components: ComponentResult[] })
 }
 
 /** Courbe simple (SVG) des notes récentes — uniquement des valeurs réelles. */
-export function Sparkline({ values, height = 60 }: { values: { label: string; value: number }[]; height?: number }) {
+export function Sparkline({ values, height = 60, max = 10, unit = "/10" }: { values: { label: string; value: number }[]; height?: number; max?: number; unit?: string }) {
   if (values.length < 2) return <p className="text-sm text-muted">Au moins deux parties notées sont nécessaires pour afficher une évolution.</p>;
   const w = 320;
-  const pts = values.map((v, i) => ({ x: (i / (values.length - 1)) * (w - 16) + 8, y: height - 6 - (v.value / 10) * (height - 12) }));
+  const pts = values.map((v, i) => ({ x: (i / (values.length - 1)) * (w - 16) + 8, y: height - 6 - (v.value / max) * (height - 12) }));
   const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const area = `${d} L${pts.at(-1)!.x.toFixed(1)},${height} L${pts[0]!.x.toFixed(1)},${height} Z`;
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img" aria-label={`Évolution des notes : ${values.map((v) => v.value).join(", ")}`}>
-      <line x1={8} x2={w - 8} y1={height - 6 - 0.5 * (height - 12)} y2={height - 6 - 0.5 * (height - 12)} stroke="#232b3b" strokeDasharray="4 4" />
-      <path d={d} fill="none" stroke="#4c9dff" strokeWidth={2} />
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full overflow-visible" role="img" aria-label={`Évolution : ${values.map((v) => `${v.value}${unit}`).join(", ")}`}>
+      <defs>
+        <linearGradient id="spark-line" x1="0" x2="1"><stop offset="0" stopColor="#922eff" /><stop offset="1" stopColor="#d34aff" /></linearGradient>
+        <linearGradient id="spark-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#922eff" stopOpacity="0.35" /><stop offset="1" stopColor="#922eff" stopOpacity="0" /></linearGradient>
+      </defs>
+      <line x1={8} x2={w - 8} y1={height - 6 - 0.5 * (height - 12)} y2={height - 6 - 0.5 * (height - 12)} stroke="#30234b" strokeDasharray="4 4" />
+      <path d={area} fill="url(#spark-area)" />
+      <path d={d} fill="none" stroke="url(#spark-line)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       {pts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={3} fill="#4c9dff">
-          <title>{`${values[i]!.label} : ${values[i]!.value}/10`}</title>
+        <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 4.5 : 3} fill={i === pts.length - 1 ? "#d34aff" : "#922eff"} stroke="#080812" strokeWidth={1.5}>
+          <title>{`${values[i]!.label} : ${values[i]!.value}${unit}`}</title>
         </circle>
       ))}
     </svg>
@@ -96,7 +102,7 @@ export function formatRank(r: RankEntry) {
 }
 
 /** Courbe cumulative par minute (or, CS) — valeurs réelles de la timeline Riot. */
-export function MinuteChart({ values, label, color = "#4c9dff", height = 90 }: { values: number[]; label: string; color?: string; height?: number }) {
+export function MinuteChart({ values, label, color = "#c48bff", height = 90 }: { values: number[]; label: string; color?: string; height?: number }) {
   if (values.length < 2) return null;
   const w = 360;
   const max = Math.max(...values, 1);
@@ -106,10 +112,10 @@ export function MinuteChart({ values, label, color = "#4c9dff", height = 90 }: {
     <figure>
       <figcaption className="mb-1 text-xs text-muted">{label} — {values[values.length - 1]!.toLocaleString("fr-FR")} à {values.length - 1} min</figcaption>
       <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img" aria-label={`${label} par minute : ${values.join(", ")}`}>
-        <line x1={30} x2={w - 10} y1={height - 18} y2={height - 18} stroke="#232b3b" />
-        <text x={0} y={12} fontSize={10} fill="#8b95a8">{max.toLocaleString("fr-FR")}</text>
-        <text x={30} y={height - 4} fontSize={10} fill="#8b95a8">0 min</text>
-        <text x={w - 10} y={height - 4} fontSize={10} fill="#8b95a8" textAnchor="end">{values.length - 1} min</text>
+        <line x1={30} x2={w - 10} y1={height - 18} y2={height - 18} stroke="#30234b" />
+        <text x={0} y={12} fontSize={10} fill="#a7a0bd">{max.toLocaleString("fr-FR")}</text>
+        <text x={30} y={height - 4} fontSize={10} fill="#a7a0bd">0 min</text>
+        <text x={w - 10} y={height - 4} fontSize={10} fill="#a7a0bd" textAnchor="end">{values.length - 1} min</text>
         <path d={d} fill="none" stroke={color} strokeWidth={2} />
       </svg>
     </figure>

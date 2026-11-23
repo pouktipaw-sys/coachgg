@@ -3,8 +3,8 @@
 type Axis = { key: string; label: string; now: number | null; before: number | null };
 
 // Palette validée pour fond sombre (slots 1 et 2) ; « avant » est aussi en pointillé (double encodage).
-const NOW = "#3987e5";
-const BEFORE = "#d95926";
+const NOW = "#d34aff";
+const BEFORE = "#59d5ff";
 
 export function RadarChart({ axes, size = 340 }: { axes: Axis[]; size?: number }) {
   const n = axes.length;
@@ -27,15 +27,15 @@ export function RadarChart({ axes, size = 340 }: { axes: Axis[]; size?: number }
     <figure>
       <svg viewBox={`0 0 ${W} ${size}`} className="mx-auto w-full max-w-md" role="img" aria-label="Profil de joueur : maintenant comparé à avant" data-testid="radar">
         {[2.5, 5, 7.5, 10].map((v) => (
-          <polygon key={v} points={axes.map((_, i) => pt(i, v)).map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#232b3b" strokeWidth={1} />
+          <polygon key={v} points={axes.map((_, i) => pt(i, v)).map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#30234b" strokeWidth={1} />
         ))}
         {axes.map((a, i) => {
           const end = pt(i, 10);
           const lab = pt(i, 11.8);
           return (
             <g key={a.key}>
-              <line x1={cx} y1={c} x2={end.x} y2={end.y} stroke="#232b3b" />
-              <text x={lab.x} y={lab.y} fontSize={12} fill="#c9d1e0" textAnchor={Math.abs(lab.x - cx) < 8 ? "middle" : lab.x > cx ? "start" : "end"} dominantBaseline="middle">
+              <line x1={cx} y1={c} x2={end.x} y2={end.y} stroke="#30234b" />
+              <text x={lab.x} y={lab.y} fontSize={12} fill="#d8d2ec" textAnchor={Math.abs(lab.x - cx) < 8 ? "middle" : lab.x > cx ? "start" : "end"} dominantBaseline="middle">
                 {a.label}
               </text>
             </g>
@@ -45,7 +45,7 @@ export function RadarChart({ axes, size = 340 }: { axes: Axis[]; size?: number }
         {nowPoly && <polygon points={nowPoly} fill={NOW} fillOpacity={0.18} stroke={NOW} strokeWidth={2} />}
         {axes.map((a, i) =>
           a.now != null ? (
-            <circle key={a.key} cx={pt(i, a.now).x} cy={pt(i, a.now).y} r={5} fill={NOW} stroke="#0b0e15" strokeWidth={2}>
+            <circle key={a.key} cx={pt(i, a.now).x} cy={pt(i, a.now).y} r={5} fill={NOW} stroke="#080812" strokeWidth={2}>
               <title>{`${a.label} : ${a.now}/10 maintenant${a.before != null ? ` · ${a.before}/10 avant` : ""}`}</title>
             </circle>
           ) : null,

@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="lg:flex">
       <AppNav user={user} unread={unread} invites={invites} friendRequests={friendRequests} isAdmin={user.role === "ADMIN"} />
-      <main className="min-w-0 flex-1 px-4 py-6 md:px-8">{children}</main>
+      <main className="anim-rise min-w-0 flex-1 px-4 pb-28 pt-6 md:px-8 lg:pb-10">{children}</main>
     </div>
   );
 }
