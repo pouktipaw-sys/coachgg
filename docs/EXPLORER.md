@@ -10,6 +10,26 @@ du jeu (Data Dragon, en français). Code : `src/server/riot/explorer.ts`, `src/s
 | `/app/champions`, `/app/champions/[id]` | Grille avec recherche et filtre par classe ; fiche : sorts (récupération, description officielle), conseils officiels pour et contre, **tes** statistiques, **tes** objets finis et runes clés avec ton taux de victoire, **tes** matchups, tes amis sur ce champion | aucun (Data Dragon + base CoachGG) |
 | `/app/insights` | Tes résultats par champion, par rôle, adversaires de voie les plus durs et les plus faciles (≥ 2 parties) | aucun (base CoachGG) |
 
+## Classement et statistiques « méta »
+
+| Page | Contenu |
+|---|---|
+| `/app/leaderboard` | Ligues Challenger, Grand maître, Maître (solo/duo, flexible) : 100 premiers, PL, taux de victoire ; Riot ID des premiers résolus (cache 24 h) |
+| `/app/tierlist` | Par rôle et patch : palier S+ à D, victoires, sélection, bannissement, parties |
+| `/app/champions/[id]` | Section méta : objets les plus construits, page de runes la plus jouée, fort / faible contre |
+| `/app/draft` | Aide à la sélection : contres de l'adversaire de voie, meilleurs choix, bannissements |
+
+**Collecte** (`src/server/meta.ts`, tâche `META_CRAWL`, **désactivée par défaut**) : `META_CRAWL_PLATFORMS="EUW1"`
+dans `.env`. Une fois par heure et par serveur, le worker prend les joueurs Challenger et Grand maître, leurs dernières
+parties classées solo/duo, et additionne par patch/champion/rôle : parties, victoires, bannissements, objets, pages de
+runes complètes, matchups. Partie comptée une seule fois ; parties de moins de 15 min ignorées ; aucune donnée de
+compte conservée. Clé de développement : ~100 requêtes / 2 min → quelques centaines de parties par heure ;
+clé « Production » : même code, beaucoup plus vite (`META_CRAWL_MATCHES_PER_RUN`).
+
+**Tier list** : taux de victoire ajusté (a priori de 150 parties à 50 %, pour qu'un petit échantillon chanceux ne
+passe pas devant un champion solide), petit bonus de popularité, seuil minimum (20 parties et 0,3 % du patch).
+Paliers par centile : S+ 5 %, S 15 %, A 35 %, B 65 %, C 85 %, D.
+
 ## Honnêteté des chiffres
 
 - Tout est calculé sur des **parties réelles** ; le nombre de parties accompagne chaque pourcentage, grisé sous 3 parties.

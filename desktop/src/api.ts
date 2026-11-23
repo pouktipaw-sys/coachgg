@@ -77,6 +77,18 @@ export class CoachApi {
     }
   }
 
+  metaBuild(championId: number, role?: string | null) {
+    return this.call<{ build: { patch: string; role: string; games: number; winrate: number; runes: { primaryStyleId: number; subStyleId: number; selectedPerkIds: number[] } | null; items: { itemId: number; name: string | null }[] } | null }>(
+      `/api/meta/build?championId=${championId}${role ? `&role=${role}` : ""}`,
+    );
+  }
+
+  draftAdvice(role: string, enemy: number | null, taken: number[]) {
+    return this.call<{ advice: { patch: string; counters: { championId: number; name?: string; winrate: number; games: number }[]; best: { championId: number; name?: string; winrate: number; tier: string }[]; bans: { championId: number; name?: string; winrate: number }[] } | null }>(
+      `/api/meta/draft?role=${role}${enemy ? `&enemy=${enemy}` : ""}${taken.length ? `&taken=${taken.join(",")}` : ""}`,
+    );
+  }
+
   liveEvents(id: string, activePlayer: string, events: LiveEvent[]) {
     return this.call<{ deaths: number }>(`/api/recordings/${id}/live-events`, {
       method: "POST",

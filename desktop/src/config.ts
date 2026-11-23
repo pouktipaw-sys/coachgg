@@ -48,6 +48,15 @@ export const configSchema = z.object({
       autoUpload: z.boolean().default(true),
     })
     .prefault({}), // zod 4 : « prefault » applique les valeurs par défaut internes
+  champSelect: z
+    .object({
+      // Pendant la sélection des champions (client LoL, API locale officielle) : import de la page de runes et de
+      // l'ensemble d'objets « méta » quand ton champion est verrouillé, et conseils (contres, bannissements).
+      importRunes: z.boolean().default(true),
+      importItems: z.boolean().default(true),
+      lockfile: z.string().optional(), // chemin du fichier « lockfile » du client si installé ailleurs
+    })
+    .prefault({}),
   liveClient: z
     .object({
       // API locale du client de jeu (lecture seule) : détection de partie et événements, utilisés APRÈS le match.

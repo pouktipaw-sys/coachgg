@@ -56,3 +56,27 @@ Rien n'est affiché ni conseillé pendant la partie. Aucune lecture mémoire, au
 
 ## Packaging (à faire)
 Exécutable unique (Node SEA ou `pkg`) + `ffmpeg.exe` (build LGPL), installeur signé (MSIX ou Inno Setup), démarrage avec Windows, icône de zone de notification. Licence FFmpeg : utiliser une build LGPL et fournir les sources/notice correspondantes ; libx264 est GPL — en cas de distribution d'une build GPL, l'agent doit respecter la GPL, sinon privilégier les encodeurs matériels.
+
+## Sélection des champions (runes, objets, conseils)
+
+Pendant la **sélection des champions uniquement**, l'agent lit la session via l'API locale officielle du client
+(fichier `lockfile` du client, `desktop/src/lcu.ts`) :
+
+- **conseils** affichés dans l'interface locale : contres de l'adversaire de voie, meilleurs choix du rôle, bannissements
+  (`/api/meta/draft`, statistiques méta du serveur) ;
+- quand **ton** champion est verrouillé : création d'une page de runes « CoachGG » (remplace la précédente page CoachGG,
+  sinon la page active si elle est modifiable) et d'un ensemble d'objets pour ce champion (`/api/meta/build`).
+  Une seule fois par sélection ; désactivable : `champSelect.importRunes` / `champSelect.importItems` dans `config.json`.
+
+Jamais : choix ou verrouillage automatique, action en partie, lecture mémoire, affichage par-dessus le jeu.
+Client installé ailleurs que `C:\Riot Games\League of Legends` : `LEAGUE_DIR` ou `champSelect.lockfile`.
+
+## Lancement avec Windows
+
+```bash
+npm run agent -- autostart on
+```
+
+Ajoute un raccourci dans le dossier « Démarrage » de l'utilisateur (sans droits administrateur) : l'agent démarre
+réduit à l'ouverture de session et attend le client et les parties. `npm run agent -- autostart off` pour l'enlever.
+Ce n'est pas encore un installateur `.exe` : Node.js et le dossier du projet restent nécessaires.

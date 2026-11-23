@@ -468,9 +468,9 @@ test("explorer : stats avancées sur des parties saisies ; recherche, partie en 
   await expect(page.locator("[data-testid=insights-champions]")).toContainText("Ahri");
   await expect(page.locator("[data-testid=insights-hard]")).toContainText("Zed"); // 2 parties contre Zed, 1 victoire
   await page.goto("/app/players?q=Faker%23KR1&platform=KR");
-  await expect(page.getByRole("alert")).toContainText("Clé API Riot non configurée");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Clé API Riot non configurée");
   await page.goto("/app/live?q=Faker%23KR1&platform=KR");
-  await expect(page.getByRole("alert")).toContainText("Clé API Riot non configurée");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Clé API Riot non configurée");
   await page.goto("/app/champions");
   await expect(page.getByRole("heading", { name: "Champions" })).toBeVisible();
   for (const url of ["/app/tierlist", "/app/draft"]) {
@@ -478,5 +478,5 @@ test("explorer : stats avancées sur des parties saisies ; recherche, partie en 
     await expect(page.getByText("Pas encore de statistiques méta")).toBeVisible(); // rien d'inventé sans collecte
   }
   await page.goto("/app/leaderboard");
-  await expect(page.getByRole("alert")).toContainText("Clé API Riot non configurée");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Clé API Riot non configurée");
 });

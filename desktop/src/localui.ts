@@ -101,6 +101,8 @@ table{width:100%;font-size:13px;border-collapse:collapse}td{padding:4px;border-t
 <h1>CoachGG — agent PC <span class="muted">v${AGENT_VERSION}</span></h1>
 <p class="muted">Enregistre automatiquement la fenêtre du jeu pendant vos parties, puis envoie la vidéo après le match. Aucun micro, aucune webcam, aucun conseil pendant la partie, aucune lecture mémoire.</p>
 <section><h2 style="margin-top:0">État</h2><div id="status">…</div></section>
+<section><h2 style="margin-top:0">Sélection des champions</h2><div id="cs" class="muted">…</div>
+<p class="muted">Quand ton champion est verrouillé : page de runes et ensemble d'objets « méta » importés dans le client (désactivable dans config.json : champSelect.importRunes / importItems). Tu choisis et verrouilles toujours toi-même.</p></section>
 <section id="pairing"><h2 style="margin-top:0">Appairage</h2>
 <p class="muted">Sur le site CoachGG : Capture PC → « Générer un code ». Saisissez-le ici.</p>
 <label>Serveur</label><input id="server"><label>Code d'appairage</label><input id="code" placeholder="ABCD-EFGH">
@@ -125,6 +127,8 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 async function load(){const d=await get('/api/status');const s=d.status;
 const L={idle:'Prêt',waiting_game:'En attente d\\'une partie',recording:'Enregistrement en cours',processing:'Finalisation',uploading:'Envoi en cours',error:'Erreur'};const G=1073741824;
 document.getElementById('status').innerHTML='<b class="'+(s.state==='error'?'bad':'')+'">'+esc(L[s.state]||s.state)+'</b> — '+esc(s.message)+'<br><span class="muted">Appairé : '+(d.paired?'<span class=ok>oui</span>':'<span class=bad>non</span>')+' · capture : '+esc(s.captureBackend)+' · disque : '+(s.diskUsedBytes/G).toFixed(2)+' / '+(s.diskLimitBytes/G).toFixed(0)+' Go · en attente : '+s.queue+'</span>';
+const cs=s.champSelect||{};const A=cs.advice;const li=(l,f)=>(l||[]).slice(0,5).map(x=>'<li>'+esc(x.name||('#'+x.championId))+' <span class=muted>'+f(x)+'</span></li>').join('');
+document.getElementById('cs').innerHTML='<b>'+esc(cs.message||'')+'</b>'+(A?'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:8px"><div><b>Contres</b><ul>'+(li(A.counters,x=>x.winrate+' %')||'<li class=muted>—</li>')+'</ul></div><div><b>Plus forts</b><ul>'+li(A.best,x=>x.tier+' · '+x.winrate+' %')+'</ul></div><div><b>À bannir</b><ul>'+li(A.bans,x=>x.winrate+' %')+'</ul></div></div><p class=muted>Patch '+esc(A.patch)+'</p>':'');
 const c=d.config;server.value=c.serverUrl;title.value=c.capture.windowTitle;fps.value=c.capture.fps;height.value=c.capture.maxHeight;encoder.value=c.capture.encoder;mode.value=c.upload.mode;disk.value=Math.round(c.storage.maxDiskBytes/1073741824);del.checked=c.storage.deleteAfterUpload;
 document.getElementById('queue').innerHTML=d.queue.length?'<table>'+d.queue.slice().reverse().map(i=>'<tr><td>'+esc(i.title)+'</td><td>'+esc(i.status)+'</td><td class=muted>'+esc(i.lastError||'')+'</td></tr>').join('')+'</table>':'<p class=muted>Vide.</p>';}
 async function pair(){try{const r=await post('/api/pair',{code:code.value,serverUrl:server.value});pairMsg.textContent='Appairé : '+r.device.name;load()}catch(e){pairMsg.textContent=e.message}}

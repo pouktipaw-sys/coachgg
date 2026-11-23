@@ -11,6 +11,8 @@ import { GameWatcher, LiveClientProbe, type GameProbe } from "./liveclient";
 import { startRecording, type RecordingHandle } from "./recorder";
 import { availableForRecording, enforceDiskLimit, usedBytes } from "./storage";
 import { UploadQueue } from "./queue";
+import { ChampSelectAssistant } from "./champselect";
+import { Lcu, findLockfile, httpsTransport } from "./lcu";
 
 export type AgentState = "idle" | "waiting_game" | "recording" | "processing" | "uploading" | "error";
 
@@ -34,7 +36,7 @@ export class Agent {
 
   constructor(
     public cfg: AgentConfig,
-    opts: { home?: string; probe?: GameProbe; api?: CoachApi; log?: (m: string) => void } = {},
+    opts: { home?: string; probe?: GameProbe; api?: CoachApi; log?: (m: string) => void; lcu?: () => Lcu | null } = {},
   ) {
     const home = opts.home ?? appHome();
     this.dir = storageDir(cfg, home);
@@ -44,7 +46,18 @@ export class Agent {
     this.api = opts.api ?? new CoachApi(cfg.serverUrl, cfg.deviceToken);
     this.log = opts.log ?? ((m) => console.log(`[agent] ${m}`));
     this.markerPath = path.join(home, "current-recording.json");
+    this.champSelect = new ChampSelectAssistant(
+      cfg,
+      this.api,
+      opts.lcu ??
+        (() => {
+          const lock = findLockfile(cfg.champSelect.lockfile);
+          return lock ? new Lcu(httpsTransport(lock)) : null;
+        }),
+      this.log,
+    );
   }
+  readonly champSelect: ChampSelectAssistant;
   private api: CoachApi;
   private markerPath: string;
 
@@ -61,6 +74,7 @@ export class Agent {
       diskLimitBytes: this.cfg.storage.maxDiskBytes,
       captureBackend: this.backend,
       appVersion: AGENT_VERSION,
+      champSelect: this.champSelect.snapshot(),
     };
   }
 
@@ -88,6 +102,8 @@ export class Agent {
       this.setState("error", "Aucune méthode de capture disponible sur ce système (Windows requis pour la capture du jeu).");
       return;
     }
+    // Sélection des champions (avant la partie uniquement) : runes, objets, conseils.
+    if (!this.current) await this.champSelect.tick().catch(() => {});
     const ev = await this.watcher.tick();
     if (ev?.type === "start") await this.onGameStart(ev.gameTimeSec);
     else if (ev?.type === "end") await this.onGameEnd();

@@ -4,12 +4,14 @@
 //   coachgg-agent pair <CODE> [--server URL] [--name NOM]
 //   coachgg-agent test             test d'enregistrement de 4 s
 //   coachgg-agent status           état local et file d'envoi
+//   coachgg-agent autostart on|off lancement automatique à l'ouverture de session Windows
 import os from "node:os";
 import { Agent } from "./agent";
 import { CoachApi } from "./api";
 import { AGENT_VERSION, appHome, configSchema, loadConfig, saveConfig } from "./config";
 import { ffmpegAvailable, testRecording } from "./diagnostics";
 import { startLocalUi } from "./localui";
+import { setAutostart } from "./autostart";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name);
@@ -39,6 +41,12 @@ async function main() {
   if (cmd === "status") {
     const a = new Agent(cfg);
     console.log(JSON.stringify({ ...a.status(), paired: !!cfg.deviceToken, home: appHome(), ffmpeg: ffmpegAvailable() }, null, 2));
+    return;
+  }
+  if (cmd === "autostart") {
+    const on = process.argv[3] !== "off";
+    const r = setAutostart(on, process.cwd());
+    console.log(on ? `✓ L'agent démarrera avec Windows (${r.file}).` : "✓ Lancement automatique désactivé.");
     return;
   }
   if (cmd === "start") {
