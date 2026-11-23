@@ -31,7 +31,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
   ]);
   return (
     <div className="space-y-4">
-      <PageHeader title="Communauté" subtitle="Les meilleurs (et pires 😅) moments de la communauté, et un forum pour partager tes exploits ou demander des conseils." />
+      <PageHeader eyebrow="Social" title="Communauté" subtitle="Les meilleurs (et pires 😅) moments de la communauté, et un forum pour partager tes exploits ou demander des conseils." />
       <nav className="flex gap-2" aria-label="Sections">
         {TABS.map((t) => (
           <Link key={t.key} href={`/app/community?tab=${t.key}`} className={`rounded-full border px-4 py-1.5 text-sm ${tab === t.key ? "border-accent bg-accent/20" : "border-line text-muted"}`}>{t.label}</Link>

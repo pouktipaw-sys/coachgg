@@ -15,7 +15,7 @@ export default async function TeamsPage() {
   });
   return (
     <div>
-      <PageHeader title="CoachGG Team" subtitle="Comparez vos notes sur les parties jouées ensemble et progressez en groupe." />
+      <PageHeader eyebrow="Social" title="CoachGG Team" subtitle="Comparez vos notes sur les parties jouées ensemble et progressez en groupe." />
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div>
           {memberships.length === 0 ? (

@@ -12,7 +12,7 @@ export default async function SkillsPage() {
   const cur = s.current ? `${TIER_FR[s.currentTier!] ?? s.current.tier}${["MASTER", "GRANDMASTER", "CHALLENGER"].includes(s.current.tier) ? "" : ` ${s.current.division}`}` : null;
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader eyebrow="Performance"
         title={`Objectif : ${TIER_FR[s.target]}`}
         subtitle={
           cur

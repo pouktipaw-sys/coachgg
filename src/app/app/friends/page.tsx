@@ -38,7 +38,7 @@ export default async function FriendsPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Ta squad" subtitle="Ajoute tes potes avec leur Riot ID, compare vos formes, et grimpe dans le classement de la semaine." />
+      <PageHeader eyebrow="Social" title="Ta squad" subtitle="Ajoute tes potes avec leur Riot ID, compare vos formes, et grimpe dans le classement de la semaine." />
 
       <section className="card space-y-2">
         <AddFriendForm defaultPlatform={identity?.platform ?? "EUW1"} />

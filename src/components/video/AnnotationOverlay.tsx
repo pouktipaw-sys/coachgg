@@ -55,7 +55,7 @@ export function AnnotationOverlay({ annotations, tMs, frame, minimap, width, hei
         </filter>
       </defs>
       {showMinimapFrame && mm && (
-        <rect x={mm.x} y={mm.y} width={mm.w} height={mm.h} fill="none" stroke="#7cc4ff" strokeDasharray="6 4" strokeWidth={1.5} />
+        <rect x={mm.x} y={mm.y} width={mm.w} height={mm.h} fill="none" stroke="#59d5ff" strokeDasharray="6 4" strokeWidth={1.5} />
       )}
       {annotations.map((a) => {
         const inPause = pauseAnim && a.recommendationId === pauseAnim.momentId && a.startMs <= pauseAnim.decisionMs + 50 && a.endMs >= pauseAnim.decisionMs - 50;
@@ -89,7 +89,7 @@ function Tag({ x, y, text, color, anchor = "start" }: { x: number; y: number; te
   const rx = anchor === "middle" ? x - w / 2 : anchor === "end" ? x - w : x;
   return (
     <g>
-      <rect x={rx} y={y - 11} width={w} height={18} rx={4} fill="#0a0d14" fillOpacity={0.85} stroke={color} strokeWidth={1} />
+      <rect x={rx} y={y - 11} width={w} height={18} rx={4} fill="#080812" fillOpacity={0.85} stroke={color} strokeWidth={1} />
       <text x={rx + 6} y={y + 2} fontSize={11} fontWeight={600} fill="#fff" style={{ fontFamily: "var(--font-sans)" }}>
         {text}
       </text>
@@ -101,7 +101,7 @@ export function Shape({ a, progress, frame, minimap }: { a: AnnotationDTO; progr
   const meta = STYLE_META[a.style];
   // Reconstitution (trajet horodaté) : « toi » en doré, distinct des ennemis (rouge).
   const timed = a.type === "path" && !!(a.geometry as { times?: number[] }).times;
-  const color = timed && a.style === "actual" ? "#fbbf24" : meta.color;
+  const color = meta.color;
   const P = (p: { x: number; y: number }) => projectPoint(p, a.space, frame, minimap);
   const R = (r: number) => projectRadius(r, a.space, frame, minimap);
   const small = a.space === "MINIMAP";
@@ -136,12 +136,12 @@ export function Shape({ a, progress, frame, minimap }: { a: AnnotationDTO; progr
           {progress > 0 &&
             (a.style === "actual" ? (
               <g transform={`translate(${head.x},${head.y})`}>
-                <circle r={small ? 5 : 8} fill="#0a0d14" stroke={color} strokeWidth={2} />
+                <circle r={small ? 5 : 8} fill="#080812" stroke={color} strokeWidth={2} />
                 <path d={small ? "M-2.5,-2.5 L2.5,2.5 M2.5,-2.5 L-2.5,2.5" : "M-4,-4 L4,4 M4,-4 L-4,4"} stroke={color} strokeWidth={2.2} />
               </g>
             ) : (
               <g transform={`translate(${head.x},${head.y})`}>
-                <circle r={small ? 5 : 8} fill="#0a0d14" stroke={color} strokeWidth={2} />
+                <circle r={small ? 5 : 8} fill="#080812" stroke={color} strokeWidth={2} />
                 <path d={small ? "M-2.5,0 L-0.5,2 L3,-2.5" : "M-4,0 L-1,3.5 L4.5,-3.5"} fill="none" stroke={color} strokeWidth={2.2} />
               </g>
             ))}
@@ -169,7 +169,7 @@ export function Shape({ a, progress, frame, minimap }: { a: AnnotationDTO; progr
           <circle cx={c.x} cy={c.y} r={r} fill={a.style === "danger" ? "url(#hatch)" : color} fillOpacity={a.style === "danger" ? 1 : 0.15} stroke={color} strokeWidth={2} strokeDasharray="8 5" />
           {a.style === "danger" && (
             <g transform={`translate(${c.x},${c.y - r})`}>
-              <path d="M0,-11 L10,7 L-10,7 z" fill="#0a0d14" stroke={color} strokeWidth={2} />
+              <path d="M0,-11 L10,7 L-10,7 z" fill="#080812" stroke={color} strokeWidth={2} />
               <text x={0} y={5} textAnchor="middle" fontSize={11} fontWeight={800} fill={color}>!</text>
             </g>
           )}

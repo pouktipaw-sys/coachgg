@@ -30,7 +30,7 @@ export default async function CoachPage({ searchParams }: { searchParams: Promis
   const llm = llmConfigured();
   return (
     <div>
-      <PageHeader
+      <PageHeader eyebrow="Performance"
         title="Coach"
         subtitle="Questions sur vos parties, réponses citant vos matchs, clips et objectifs."
         actions={<Link href="/app/coach" className="btn-ghost">Nouvelle conversation</Link>}

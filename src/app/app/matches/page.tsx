@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, EmptyState, PageHeader, StatTile } from "@/components/ui";
 import { MODE_LABELS, ROLE_LABELS, ScorePill, fmtDuration } from "@/components/stats";
 import { requirePageUser } from "@/server/auth/page";
 import { listUserMatches, parseMatchFilters } from "@/server/matches/queries";
@@ -35,7 +35,7 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
 
   return (
     <div>
-      <PageHeader
+      <PageHeader eyebrow="Performance"
         title="Matchs & statistiques"
         subtitle="Historique des parties enregistrées (saisie manuelle ou import Riot)."
         actions={<Link href="/app/matches/new" className="btn-primary">Ajouter un match</Link>}
@@ -81,6 +81,26 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
         </p>
       )}
 
+      {rows.length > 0 && (() => {
+        // Indicateurs de la page affichée (parties réelles uniquement, filtres appliqués).
+        const real = rows.filter((r) => !r.isDemo);
+        const w = real.filter((r) => r.me.win).length;
+        const k = real.filter((r) => r.me.kills != null && r.me.deaths != null && r.me.assists != null);
+        const c = real.filter((r) => r.me.creepScore != null && r.durationSec > 0);
+        const sc = real.filter((r) => r.me.score != null);
+        const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+        const kda = avg(k.map((r) => (r.me.kills! + r.me.assists!) / Math.max(1, r.me.deaths!)));
+        const cs = avg(c.map((r) => r.me.creepScore! / (r.durationSec / 60)));
+        const note = avg(sc.map((r) => r.me.score!));
+        return (
+          <section aria-label="Résumé des parties affichées" className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatTile icon="trophy" label="Victoires" value={real.length ? `${Math.round((w / real.length) * 100)} %` : "—"} tone={real.length && w / real.length >= 0.5 ? "win" : "loss"} hint={`${w}V / ${real.length - w}D · ${real.length} partie(s)`} />
+            <StatTile icon="sword" label="KDA moyen" value={kda == null ? "—" : kda.toFixed(2).replace(".", ",")} tone="accent" hint={`${k.length} partie(s)`} />
+            <StatTile icon="coin" label="Sbires / min" value={cs == null ? "—" : cs.toFixed(1).replace(".", ",")} hint={`${c.length} partie(s)`} />
+            <StatTile icon="flame" label="Note moyenne" value={note == null ? "—" : note.toFixed(1).replace(".", ",")} tone="accent" hint="expérimentale" />
+          </section>
+        );
+      })()}
       {rows.length === 0 ? (
         <EmptyState
           title={filtered ? "Aucun match ne correspond aux filtres" : "Aucun match enregistré"}
@@ -88,9 +108,9 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
           action={filtered ? { href: "/app/matches", label: "Réinitialiser les filtres" } : { href: "/app/matches/new", label: "Ajouter un match" }}
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line">
+        <div className="overflow-x-auto rounded-2xl border border-line/80 bg-panel/60 backdrop-blur-sm">
           <table className="w-full min-w-[760px] text-sm">
-            <thead className="bg-panel text-left text-xs uppercase tracking-wide text-muted">
+            <thead className="bg-panel-2/80 text-left text-[11px] uppercase tracking-[0.12em] text-muted">
               <tr>
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Résultat</th>
@@ -104,16 +124,16 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
                 <th className="px-3 py-2">Source</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody className="divide-y divide-line/60">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-panel-2">
+                <tr key={r.id} className={`transition-colors hover:bg-accent/[0.06] ${r.me.win ? "shadow-[inset_3px_0_0_#34d399]" : "shadow-[inset_3px_0_0_#f87171]"}`}>
                   <td className="px-3 py-2">
                     <Link className="hover:underline" href={`/app/matches/${r.id}`}>{new Date(r.date).toLocaleDateString("fr-FR")}</Link>
                   </td>
                   <td className="px-3 py-2">
-                    <span className={r.me.win ? "text-win" : "text-loss"}>{r.me.win ? "Victoire" : "Défaite"}</span>
+                    <span className={`font-display font-semibold ${r.me.win ? "text-win" : "text-loss"}`}>{r.me.win ? "Victoire" : "Défaite"}</span>
                   </td>
-                  <td className="px-3 py-2">{r.me.championName}</td>
+                  <td className="px-3 py-2 font-medium">{r.me.championName}</td>
                   <td className="px-3 py-2">{r.me.role ? ROLE_LABELS[r.me.role] : "—"}</td>
                   <td className="px-3 py-2 font-mono">{r.me.kills}/{r.me.deaths}/{r.me.assists}</td>
                   <td className="px-3 py-2 font-mono">{r.me.creepScore ?? "—"}</td>

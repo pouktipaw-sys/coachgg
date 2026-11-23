@@ -29,7 +29,7 @@ export default async function VideosPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <PageHeader
+      <PageHeader eyebrow="Analyser"
         title="Vidéos & coaching"
         subtitle={`Espace utilisé : ${formatBytes(Number(used._sum.sizeBytes ?? 0))}`}
         actions={<Link href="/app/videos/upload" className="btn-primary">Importer une vidéo</Link>}

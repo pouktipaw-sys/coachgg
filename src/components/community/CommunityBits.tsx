@@ -111,9 +111,17 @@ export function ReelsFeed({ initial, nextCursor }: { initial: PostDTO[]; nextCur
     setCursor(r.nextCursor);
   }
 
-  if (!posts.length) return <p className="card text-sm text-muted">Pas encore de reel. Publie un de tes clips depuis la page Clips : « Publier en reel » !</p>;
+  if (!posts.length)
+    return (
+      <div className="card-glow mx-auto max-w-md p-8 text-center">
+        <p className="eyebrow">Reels</p>
+        <p className="mt-2 font-display text-lg font-semibold">Pas encore de reel</p>
+        <p className="mt-1 text-sm text-muted">Publie ton meilleur moment depuis la page Clips : « Publier en reel ». Seul le clip annoté est partagé, jamais la vidéo entière.</p>
+        <a href="/app/clips" className="btn-primary mt-4">Voir mes clips</a>
+      </div>
+    );
   return (
-    <div ref={root} className="mx-auto h-[calc(100vh-11rem)] max-w-md snap-y snap-mandatory overflow-y-auto rounded-2xl bg-black" data-testid="reels">
+    <div ref={root} className="mx-auto h-[calc(100vh-13rem)] max-w-md snap-y snap-mandatory overflow-y-auto rounded-3xl bg-black ring-1 ring-accent/40 shadow-[0_0_60px_-20px_rgb(211_74_255/0.8)] lg:h-[calc(100vh-11rem)]" data-testid="reels">
       {posts.map((p) => (
         <article key={p.id} data-reel className="relative flex h-full snap-start items-center justify-center" data-testid="reel">
           <video src={`/api/community/posts/${p.id}/video`} className="max-h-full w-full object-contain" loop playsInline muted={muted} preload="metadata" onClick={(e) => (e.currentTarget.paused ? e.currentTarget.play() : e.currentTarget.pause())} />

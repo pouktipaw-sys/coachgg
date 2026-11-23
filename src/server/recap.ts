@@ -68,7 +68,8 @@ export async function renderRecap(job: AnalysisJob) {
   const gameLine = me
     ? `${me.championName} · ${me.win ? "Victoire" : "Défaite"}${me.statistics ? ` · K/D/A ${me.statistics.kills}/${me.statistics.deaths}/${me.statistics.assists}` : ""} · ${Math.round(me.match.durationSec / 60)} min`
     : null;
-  const KIND_COLOR: Record<string, number[]> = { MISTAKE: [240, 82, 82], GOOD_ACTION: [49, 196, 141], DEATH: [240, 82, 82], FIGHT: [255, 138, 76], MISSED_OPPORTUNITY: [251, 191, 36] };
+  // Mêmes teintes que KIND_TONE (MomentCard.tsx) : erreur magenta, mort rouge, occasion manquée dorée, bonne action verte.
+  const KIND_COLOR: Record<string, number[]> = { MISTAKE: [211, 74, 255], GOOD_ACTION: [52, 211, 153], DEATH: [248, 113, 113], FIGHT: [146, 46, 255], MISSED_OPPORTUNITY: [251, 191, 36] };
   const KIND_FR: Record<string, string> = { MISTAKE: "Décision à revoir", GOOD_ACTION: "Bonne action", OBJECTIVE: "Objectif", FIGHT: "Combat", MISSED_OPPORTUNITY: "Occasion manquée", INTERESTING: "À revoir", DEATH: "Mort" };
 
   // Les 3 erreurs les plus coûteuses (annoncées en ouverture), si elles sont réellement des erreurs.
@@ -82,8 +83,8 @@ export async function renderRecap(job: AnalysisJob) {
       title: `Récap de la partie — ${rec.title}`,
       subtitle: `${moments.length} moment(s) à revoir · ${ai ? "analysés par l'IA (Claude)" : measured ? "faits mesurés par la timeline Riot" : "détection automatique et tes annotations"}`,
       sections: [
-        ...(gameLine ? [{ label: "La partie", color: [49, 196, 141], lines: [gameLine] }] : []),
-        ...(costly.length ? [{ label: "Les erreurs les plus coûteuses", color: [240, 82, 82], lines: costly.map((m) => `${formatMs(m.decisionMs)} — ${m.title}`) }] : []),
+        ...(gameLine ? [{ label: "La partie", color: [52, 211, 153], lines: [gameLine] }] : []),
+        ...(costly.length ? [{ label: "Les erreurs les plus coûteuses", color: [248, 113, 113], lines: costly.map((m) => `${formatMs(m.decisionMs)} — ${m.title}`) }] : []),
         { label: all.length > moments.length ? `Au programme (${moments.length} sur ${all.length}, les plus importants)` : "Au programme", lines: moments.slice(0, costly.length ? 4 : 6).map((m, i) => `${i + 1}. ${formatMs(m.decisionMs)} — ${m.title}`) },
       ],
       footer,
@@ -152,7 +153,7 @@ export async function renderRecap(job: AnalysisJob) {
       sections: [
         { label: "En bref", lines: [report.summary] },
         { label: "3 priorités", color: [251, 191, 36], lines: report.priorities.map((p) => `${p.title} : ${p.drill}`) },
-        { label: "Objectif pour la prochaine partie", color: [49, 196, 141], lines: [report.nextGameGoal] },
+        { label: "Objectif pour la prochaine partie", color: [52, 211, 153], lines: [report.nextGameGoal] },
       ],
       footer,
     });

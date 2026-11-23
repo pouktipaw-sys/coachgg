@@ -17,7 +17,7 @@ import { KIND_LABELS, type AnnotationInput } from "@/lib/annotations/schema";
 import { api, errorMessage } from "@/lib/client";
 import { AnnotationOverlay, Shape } from "./AnnotationOverlay";
 import { AnnotationEditor, buildAnnotation, emptyDraft, requiredPoints, type Draft } from "./AnnotationEditor";
-import { KIND_ICON, MomentCard } from "./MomentCard";
+import { KIND_ICON, KIND_TONE, MomentCard } from "./MomentCard";
 import { MomentForm } from "./MomentForm";
 import type { AnnotationDTO, RecommendationDTO, RecordingDTO } from "./types";
 
@@ -403,7 +403,7 @@ export function CoachingStudio({
       <div className={`flex min-w-0 flex-col gap-2 ${fullscreen ? "h-full" : ""}`}>
         <div
           ref={stageRef}
-          className={`relative overflow-hidden rounded-xl bg-black ${fullscreen ? "min-h-0 flex-1" : "aspect-video"} ${editing ? "cursor-crosshair" : ""}`}
+          className={`relative overflow-hidden rounded-2xl bg-black ring-1 ring-accent/30 shadow-[0_0_50px_-18px_rgb(146_46_255/0.75)] ${fullscreen ? "min-h-0 flex-1" : "aspect-video"} ${editing ? "cursor-crosshair" : ""}`}
           onClick={editing ? onStageClick : undefined}
           data-testid="video-stage"
         >
@@ -435,76 +435,92 @@ export function CoachingStudio({
             />
           )}
           {phase && (
-            <div className="pointer-events-none absolute left-3 top-3 max-w-[55%] truncate rounded-md bg-black/75 px-2.5 py-1 text-xs font-medium" data-testid="coaching-phase">
-              {KIND_ICON[phase.m.kind]} {phase.label} — {phase.m.title}
+            <div className="pointer-events-none absolute left-3 top-3 flex max-w-[60%] items-center gap-2 truncate rounded-lg border border-white/10 bg-black/70 px-2.5 py-1 text-xs font-medium backdrop-blur-md" data-testid="coaching-phase">
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_TONE[phase.m.kind].dot, boxShadow: `0 0 8px ${KIND_TONE[phase.m.kind].dot}` }} />
+              <span className="font-display uppercase tracking-wider text-accent-2">{phase.label}</span> — {KIND_ICON[phase.m.kind]} {phase.m.title}
               {phase.m.provenance === "AUTOMATIC" && phase.m.status === "DRAFT" ? " (proposition auto)" : ""}
             </div>
           )}
           {pausedMoment && (
-            <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center gap-2 rounded-lg bg-black/80 p-2.5 text-sm md:right-auto">
-              <span className="font-medium">⏸ {pausedMoment.advice || pausedMoment.title}</span>
-              <button className="btn-ghost px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); replay(pausedMoment); }}>↺ Revoir</button>
-              <button className="btn-primary px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); continuePlayback(); }}>Continuer ▶</button>
+            <div className="anim-rise absolute bottom-3 left-3 right-3 max-w-xl rounded-xl border border-accent/40 bg-black/75 p-3 text-sm shadow-[0_0_30px_-8px_rgb(146_46_255/0.8)] backdrop-blur-md md:right-auto">
+              <p className="eyebrow">⏸ Pause pédagogique · moment de décision</p>
+              <p className="mt-1 font-display font-semibold leading-snug">{pausedMoment.advice || pausedMoment.title}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button className="btn-ghost px-2.5 py-1 text-xs" onClick={(e) => { e.stopPropagation(); replay(pausedMoment); }}>↺ Revoir</button>
+                <button className="btn-primary px-2.5 py-1 text-xs" onClick={(e) => { e.stopPropagation(); continuePlayback(); }}>Continuer ▶</button>
+              </div>
             </div>
           )}
           {videoError && <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-loss">{videoError}</div>}
           <div className="pointer-events-none absolute right-3 top-3 flex gap-1">
             {(annotations.length > 0 || moments.length > 0) && allManual && (
-              <span className="rounded bg-black/70 px-2 py-0.5 text-[11px] text-muted" data-testid="manual-badge">Annoté manuellement</span>
+              <span className="rounded-md border border-white/10 bg-black/70 px-2 py-0.5 text-[11px] text-muted backdrop-blur" data-testid="manual-badge">Annoté manuellement</span>
             )}
             {!allManual && (
-              <span className="rounded bg-black/70 px-2 py-0.5 text-[11px] text-accent-2" data-testid="auto-overlay-badge">Contient des propositions automatiques</span>
+              <span className="rounded-md border border-accent/40 bg-black/70 px-2 py-0.5 text-[11px] text-accent-2 backdrop-blur" data-testid="auto-overlay-badge">Contient des propositions automatiques</span>
             )}
             {recording.isDemo && <span className="rounded bg-warn/80 px-2 py-0.5 text-[11px] font-semibold text-black">DÉMO</span>}
           </div>
         </div>
 
         {/* Timeline + marqueurs d'événements */}
-        <div className="relative px-1" aria-label="Chronologie">
-          <input
-            type="range"
-            min={0}
-            max={Math.max(1, Math.round(durationMs))}
-            step={10}
-            value={Math.round(tMs)}
-            onChange={(e) => seek(Number(e.target.value))}
-            className="w-full accent-[var(--color-accent)]"
-            aria-label="Position dans la vidéo"
-            aria-valuetext={formatMs(tMs)}
-            data-testid="timeline"
-          />
-          <div className="relative h-5">
+        <div className="rounded-xl border border-line/70 bg-panel/70 px-3 pb-2 pt-1.5 backdrop-blur-sm" aria-label="Chronologie">
+          {/* Marqueurs des moments : couleur selon le type (erreur, mort, occasion manquée, bonne action…) */}
+          <div className="relative h-7">
             {durationMs > 0 &&
-              moments.map((m) => (
-                <button
-                  key={m.id}
-                  className="absolute -translate-x-1/2 text-xs leading-none text-accent-2 hover:text-text"
-                  style={{ left: `${(m.decisionMs / durationMs) * 100}%` }}
-                  title={`${formatMs(m.decisionMs)} — ${KIND_LABELS[m.kind]} : ${m.title}`}
-                  aria-label={`Aller au moment ${m.title}`}
-                  onClick={() => {
-                    seenRef.current.delete(m.id);
-                    seek(m.contextStartMs);
-                    setPanel({ k: "moment", id: m.id });
-                  }}
-                >
-                  {KIND_ICON[m.kind]}
-                </button>
-              ))}
+              moments.map((m) => {
+                const on = activeMoment?.id === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    className={`group absolute top-0.5 -translate-x-1/2 rounded-md border px-1 text-[11px] leading-5 transition-transform hover:z-10 hover:scale-110 ${on ? "z-10 scale-110" : ""}`}
+                    style={{ left: `${(m.decisionMs / durationMs) * 100}%`, borderColor: `${KIND_TONE[m.kind].dot}aa`, color: KIND_TONE[m.kind].dot, background: on ? `${KIND_TONE[m.kind].dot}33` : "rgb(8 8 18 / 0.85)", boxShadow: on ? `0 0 12px ${KIND_TONE[m.kind].dot}` : undefined }}
+                    title={`${formatMs(m.decisionMs)} — ${KIND_LABELS[m.kind]} : ${m.title}`}
+                    aria-label={`Aller au moment ${m.title}`}
+                    onClick={() => {
+                      seenRef.current.delete(m.id);
+                      seek(m.contextStartMs);
+                      setPanel({ k: "moment", id: m.id });
+                    }}
+                  >
+                    {KIND_ICON[m.kind]}
+                  </button>
+                );
+              })}
+          </div>
+          <div className="relative">
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-bg/80">
+              <div className="h-full rounded-full bg-gradient-to-r from-accent to-magenta shadow-[0_0_10px_rgb(211_74_255/0.8)]" style={{ width: `${durationMs ? Math.min(100, (tMs / durationMs) * 100) : 0}%` }} />
+            </div>
+            {durationMs > 0 && moments.map((m) => (
+              <span key={m.id} aria-hidden className="pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-full" style={{ left: `${(m.decisionMs / durationMs) * 100}%`, background: KIND_TONE[m.kind].dot }} />
+            ))}
+            <input
+              type="range"
+              min={0}
+              max={Math.max(1, Math.round(durationMs))}
+              step={10}
+              value={Math.round(tMs)}
+              onChange={(e) => seek(Number(e.target.value))}
+              className="cgg-range relative w-full"
+              aria-label="Position dans la vidéo"
+              aria-valuetext={formatMs(tMs)}
+              data-testid="timeline"
+            />
           </div>
         </div>
 
         {/* Commandes */}
         <div className="flex flex-wrap items-center gap-2 text-sm" role="toolbar" aria-label="Commandes du lecteur">
-          <button className="btn-ghost min-w-28 whitespace-nowrap" onClick={togglePlay} aria-label={playing ? "Pause" : "Lecture"} data-testid="play-toggle">
+          <button className="btn-primary min-w-28 whitespace-nowrap" onClick={togglePlay} aria-label={playing ? "Pause" : "Lecture"} data-testid="play-toggle">
             {playing ? "❚❚ Pause" : "▶ Lecture"}
           </button>
-          <button className="btn-ghost" onClick={() => seek(tMs - 5000)} aria-label="Reculer de 5 secondes">↺ 5 s</button>
-          <button className="btn-ghost" onClick={() => goMoment(-1)} aria-label="Événement précédent">⏮</button>
-          <button className="btn-ghost" onClick={() => goMoment(1)} aria-label="Événement suivant">⏭</button>
-          <span className="font-mono tabular-nums" data-testid="time-display">
-            {formatMs(tMs)} / {formatMs(durationMs)}
-            {gt != null && <span className="ml-2 text-muted">jeu {formatMs(gt)}</span>}
+          <button className="btn-ghost px-3" onClick={() => seek(tMs - 5000)} aria-label="Reculer de 5 secondes">↺ 5 s</button>
+          <button className="btn-ghost px-3" onClick={() => goMoment(-1)} aria-label="Événement précédent">⏮</button>
+          <button className="btn-ghost px-3" onClick={() => goMoment(1)} aria-label="Événement suivant">⏭</button>
+          <span className="rounded-lg border border-line/70 bg-bg/60 px-2.5 py-1.5 font-display tabular-nums" data-testid="time-display">
+            {formatMs(tMs)} <span className="text-muted">/ {formatMs(durationMs)}</span>
+            {gt != null && <span className="ml-2 text-cyan">jeu {formatMs(gt)}</span>}
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted">
@@ -513,16 +529,21 @@ export function CoachingStudio({
                 {SPEEDS.map((s) => <option key={s} value={s}>×{s}</option>)}
               </select>
             </label>
-            <button className={`btn-ghost ${coachingOn ? "border-accent/60" : ""}`} aria-pressed={coachingOn} onClick={() => setCoachingOn((s) => !s)}>
+            <button className={`btn-ghost ${coachingOn ? "border-accent/70 bg-accent/15 text-white" : ""}`} aria-pressed={coachingOn} onClick={() => setCoachingOn((s) => !s)}>
               Coaching {coachingOn ? "activé" : "désactivé"}
             </button>
-            <button className={`btn-ghost ${showAnn ? "border-accent/60" : ""}`} aria-pressed={showAnn} onClick={() => setShowAnn((s) => !s)} data-testid="toggle-annotations">
+            <button className={`btn-ghost ${showAnn ? "border-accent/70 bg-accent/15 text-white" : ""}`} aria-pressed={showAnn} onClick={() => setShowAnn((s) => !s)} data-testid="toggle-annotations">
               Annotations {showAnn ? "visibles" : "masquées"}
             </button>
             <button className="btn-ghost" onClick={createClipHere} title="10 s avant et 5 s après la position actuelle" data-testid="create-clip">✂ Créer un clip</button>
             <button className="btn-ghost" onClick={toggleFullscreen} aria-label="Plein écran">⛶</button>
           </div>
         </div>
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted" aria-label="Légende des annotations">
+          {([["#fbbf24", "Toi"], ["#f87171", "Ennemis"], ["#60a5fa", "Alliés"], ["#34d399", "Bonne option"], ["#ff8a4c", "Zone dangereuse"]] as const).map(([c, l]) => (
+            <li key={l} className="flex items-center gap-1.5"><span aria-hidden className="h-2 w-2 rounded-full" style={{ background: c, boxShadow: `0 0 6px ${c}` }} />{l}</li>
+          ))}
+        </ul>
         <p className="text-[11px] text-muted">
           {clipMsg && <span className="mr-2 text-accent-2" role="status">{clipMsg} <a className="underline" href="/app/clips">Voir mes clips</a> ·</span>}
           Raccourcis : Espace/K lecture · J/L ±5 s · ,/. image par image · [ ] événement · A annotations · C coaching · F plein écran
@@ -530,8 +551,8 @@ export function CoachingStudio({
       </div>
 
       {/* ─── Panneau latéral ─── */}
-      <aside className={`card min-w-0 space-y-4 ${fullscreen ? "overflow-auto" : ""}`}>
-        <div className="flex flex-wrap gap-1 text-xs" role="tablist">
+      <aside className={`card-glow min-w-0 space-y-4 ${fullscreen ? "overflow-auto" : "xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"}`}>
+        <div className="flex flex-wrap gap-1 rounded-xl border border-line/70 bg-bg/60 p-1 text-xs" role="tablist">
           <TabBtn active={panel.k === "moments" || panel.k === "moment"} onClick={() => setPanel({ k: "moments" })}>Moments ({moments.length})</TabBtn>
           {isOwner && <TabBtn active={panel.k === "annotate"} onClick={() => { videoRef.current?.pause(); setPanel({ k: "annotate" }); }}>Annoter</TabBtn>}
           {isOwner && <TabBtn active={panel.k === "form"} onClick={() => { videoRef.current?.pause(); setPanel({ k: "form" }); }}>+ Moment</TabBtn>}
@@ -554,11 +575,12 @@ export function CoachingStudio({
               {moments.map((m) => (
                 <li key={m.id}>
                   <button
-                    className="w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-left text-sm hover:border-accent/60"
+                    className="card-hover relative w-full overflow-hidden rounded-xl border border-line/70 bg-bg/40 py-2 pl-4 pr-3 text-left text-sm"
                     onClick={() => { seenRef.current.delete(m.id); seek(m.contextStartMs); setPanel({ k: "moment", id: m.id }); }}
                   >
-                    <span className="font-mono text-xs text-muted">{formatMs(m.decisionMs)}</span>{" "}
-                    <span aria-hidden>{KIND_ICON[m.kind]}</span> {m.title}
+                    <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${KIND_TONE[m.kind].bar}`} />
+                    <span className="font-display text-xs text-accent-2">{formatMs(m.decisionMs)}</span>{" "}
+                    <span aria-hidden style={{ color: KIND_TONE[m.kind].dot }}>{KIND_ICON[m.kind]}</span> <span className="font-medium">{m.title}</span>
                     <span className="block text-xs text-muted">
                       {KIND_LABELS[m.kind]}
                       {m.provenance === "AUTOMATIC" && (m.status === "DRAFT" ? <span className="ml-1 text-warn">· proposition auto à valider</span> : <span className="ml-1 text-accent-2">· auto validée</span>)}
@@ -644,7 +666,7 @@ export function CoachingStudio({
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button role="tab" aria-selected={active} onClick={onClick}
-      className={`rounded-md px-2.5 py-1.5 ${active ? "bg-accent/20 text-text" : "text-muted hover:bg-panel-2"}`}>
+      className={`flex-1 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition-all ${active ? "bg-gradient-to-r from-accent to-magenta text-white shadow-[0_0_14px_-4px_rgb(211_74_255/0.9)]" : "text-muted hover:bg-white/[0.05] hover:text-text"}`}>
       {children}
     </button>
   );

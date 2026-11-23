@@ -171,3 +171,17 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .anim-ripple, .anim-pulse, .anim-rise, .anim-float, .skeleton { animation: none; }
 }
+
+/* Curseur de la timeline du studio : piste transparente (la barre dégradée est dessous), poignée lumineuse */
+.cgg-range { -webkit-appearance: none; appearance: none; background: transparent; height: 22px; cursor: pointer; }
+.cgg-range::-webkit-slider-runnable-track { height: 22px; background: transparent; }
+.cgg-range::-moz-range-track { height: 6px; background: transparent; }
+.cgg-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: 3px; border-radius: 999px;
+  background: #f5f2ff; border: 3px solid #d34aff; box-shadow: 0 0 0 4px rgb(211 74 255 / 0.25), 0 0 14px rgb(211 74 255 / 0.9);
+}
+.cgg-range::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 999px; background: #f5f2ff; border: 3px solid #d34aff; box-shadow: 0 0 14px rgb(211 74 255 / 0.9);
+}
+.cgg-range:focus-visible { outline: none; }
+.cgg-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px #59d5ff, 0 0 14px rgb(211 74 255 / 0.9); }

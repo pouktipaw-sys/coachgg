@@ -50,3 +50,29 @@ export function momentChips(evidence: unknown): Chip[] {
 }
 
 const cap = (s: string) => (s.startsWith("le ") ? s.slice(3) : s.startsWith("les ") ? s.slice(4) : s).replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * Conséquences MESURÉES d'un moment (jamais supposées) : objectif perdu, temps passé mort, combat perdu,
+ * sbires ou or perdus, objet en retard. Liste vide si rien n'est mesuré : la carte n'affiche alors pas la section.
+ */
+export function momentConsequences(evidence: unknown): string[] {
+  const e = (evidence ?? {}) as {
+    type?: string;
+    facts?: Facts;
+    absence?: { kind: string };
+    macro?: { kind: string; gold?: number; minutes?: number; csLost?: number; objective?: string; afterSec?: number };
+  };
+  const out: string[] = [];
+  if (e.type === "riot_absence" && e.absence) out.push(e.absence.kind === "FIGHT" ? "Ton équipe a perdu le combat sans toi." : "L'ennemi a pris l'objectif sans opposition.");
+  const mac = e.macro;
+  if (e.type === "riot_macro" && mac) {
+    if (mac.kind === "MISSED_BACK") out.push(`${mac.minutes} minute(s) à jouer avec ${fr(mac.gold ?? 0)} or non dépensé : un objet de retard sur tes adversaires.`);
+    if (mac.kind === "BAD_BACK") out.push(`L'ennemi prend ${mac.objective ?? "l'objectif"} ${mac.afterSec} s après ton retour à la base.`);
+    if (mac.kind === "CS_DROP") out.push(`Environ ${mac.csLost} sbires perdus, soit près de ${fr((mac.csLost ?? 0) * 20)} or.`);
+  }
+  const f = e.facts;
+  if (f?.objectiveLost) out.push(`${cap(f.objectiveLost.label)} perdu ${f.objectiveLost.after} s après ta mort.`);
+  if (f?.deathTimerSec != null) out.push(`Environ ${f.deathTimerSec} s passées mort, hors de la carte.`);
+  if (f?.unspentGold != null && f.unspentGold >= 1500) out.push(`${fr(f.unspentGold)} or non dépensé au moment de la mort.`);
+  return out;
+}

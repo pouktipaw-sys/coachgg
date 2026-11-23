@@ -14,7 +14,7 @@ export default async function InvitationsPage() {
   });
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Invitations" subtitle="Rejoindre un groupe ne partage pas vos vidéos : vous choisirez ce que vous partagez." />
+      <PageHeader eyebrow="Social" title="Invitations" subtitle="Rejoindre un groupe ne partage pas vos vidéos : vous choisirez ce que vous partagez." />
       {invites.length === 0 ? (
         <EmptyState title="Aucune invitation en attente" />
       ) : (

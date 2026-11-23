@@ -54,6 +54,7 @@ test("visite visuelle", async ({ page, browser }) => {
   await shot(page, "01-dashboard", "/app");
   await shot(page, "02-studio", studio, false);
   await page.locator("[data-testid=video]").evaluate((v: HTMLVideoElement) => { v.pause(); v.currentTime = 12; });
+  await page.getByRole("tabpanel").or(page.locator("aside")).locator("button", { hasText: "Écran grisé" }).first().click().catch(() => {});
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/02b-studio-moment.png`, fullPage: true });
   await shot(page, "03-matches", "/app/matches");

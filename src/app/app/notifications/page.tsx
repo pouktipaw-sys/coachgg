@@ -12,7 +12,7 @@ export default async function NotificationsPage() {
   const unread = items.filter((i) => !i.readAt).length;
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Notifications" actions={unread > 0 ? <ActionButton url="/api/notifications" body={{}} label="Tout marquer comme lu" /> : undefined} />
+      <PageHeader eyebrow="Compte" title="Notifications" actions={unread > 0 ? <ActionButton url="/api/notifications" body={{}} label="Tout marquer comme lu" /> : undefined} />
       {items.length === 0 ? (
         <EmptyState title="Aucune notification" text="Vous serez prévenu quand une vidéo est prête ou quand on vous invite dans un groupe." />
       ) : (

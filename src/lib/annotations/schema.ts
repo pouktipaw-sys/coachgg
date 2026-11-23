@@ -79,11 +79,13 @@ export type Annotation = AnnotationInput & {
 };
 
 export const STYLE_META: Record<AnnotationStyle, { label: string; color: string; dash?: string }> = {
-  actual: { label: "Trajet réel", color: "#f05252" },
-  alternative: { label: "Alternative proposée", color: "#31c48d", dash: "10 7" },
+  // Couleurs sémantiques partagées avec analysis/render_clip.py (COLORS) : toi = doré, ennemis = rouge,
+  // alliés = bleu, bonne option = vert.
+  actual: { label: "Toi (trajet réel)", color: "#fbbf24" },
+  alternative: { label: "Alternative proposée", color: "#34d399", dash: "10 7" },
   danger: { label: "Zone dangereuse", color: "#ff8a4c" },
-  ally: { label: "Allié", color: "#3f83f8" },
-  enemy: { label: "Ennemi visible", color: "#f05252" },
+  ally: { label: "Allié", color: "#60a5fa" },
+  enemy: { label: "Ennemi visible", color: "#f87171" },
   neutral: { label: "Repère", color: "#e5e7eb" },
 };
 

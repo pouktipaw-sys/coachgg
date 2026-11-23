@@ -75,7 +75,7 @@ export function absenceProposal(a: Absence, opts: { videoMs: number; durationMs:
   const win = { startMs: Math.max(0, decisionMs - 1500), endMs: Math.min(opts.durationMs, v + 4000) };
   const annotations: Proposal["annotations"] = opts.minimap
     ? [
-        { type: "highlight", style: "ally", space: "MINIMAP", ...win, geometry: { at: toMinimap(a.myPos), r: 0.05 }, label: "Toi" },
+        { type: "highlight", style: "actual", space: "MINIMAP", ...win, geometry: { at: toMinimap(a.myPos), r: 0.05 }, label: "Toi" },
         { type: "zone", style: "danger", space: "MINIMAP", ...win, geometry: { center: toMinimap(a.where), r: 0.08 }, label: a.kind === "FIGHT" ? "Combat perdu" : "Objectif" },
         { type: "arrow", style: "alternative", space: "MINIMAP", startMs: decisionMs, endMs: win.endMs, geometry: { from: toMinimap(a.myPos), to: toMinimap(a.where) }, label: "Rejoindre" },
         ...trailAnnotations(opts.trails ?? [], opts.durationMs),
@@ -140,7 +140,7 @@ export function macroProposal(m: MacroMistake, opts: { videoMs: number; duration
   const win = { startMs: Math.max(0, decisionMs - 1500), endMs };
   const annotations: Proposal["annotations"] = [];
   if (opts.minimap && m.myPos) {
-    annotations.push({ type: "highlight", style: "ally", space: "MINIMAP", ...win, geometry: { at: toMinimap(m.myPos), r: 0.05 }, label: "Toi" });
+    annotations.push({ type: "highlight", style: "actual", space: "MINIMAP", ...win, geometry: { at: toMinimap(m.myPos), r: 0.05 }, label: "Toi" });
     if (m.where) {
       annotations.push({ type: "zone", style: "danger", space: "MINIMAP", ...win, geometry: { center: toMinimap(m.where), r: 0.08 }, label: "Objectif perdu" });
       annotations.push({ type: "arrow", style: "alternative", space: "MINIMAP", startMs: decisionMs, endMs, geometry: { from: toMinimap(m.myPos), to: toMinimap(m.where) }, label: "Rester pour l'objectif" });

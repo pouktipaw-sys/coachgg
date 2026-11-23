@@ -14,7 +14,7 @@ export default async function ClipsPage({ searchParams }: { searchParams: Promis
   const filtered = Object.values(sp).some(Boolean);
   return (
     <div>
-      <PageHeader title="Clips" subtitle="Vos séquences : favoris, notes personnelles, bonnes actions et décisions à revoir. Exportables avec leurs annotations." />
+      <PageHeader eyebrow="Analyser" title="Clips" subtitle="Vos séquences : favoris, notes personnelles, bonnes actions et décisions à revoir. Exportables avec leurs annotations." />
       <form className="mb-4 flex flex-wrap gap-2" role="search">
         <input name="q" defaultValue={sp.q} placeholder="Titre ou note…" className="input max-w-xs" aria-label="Rechercher" />
         <select name="kind" defaultValue={sp.kind ?? ""} className="input max-w-[220px]" aria-label="Catégorie">

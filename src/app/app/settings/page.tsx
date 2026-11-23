@@ -21,7 +21,7 @@ export default async function SettingsPage() {
   const sessions = await countSessions(user.id);
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <PageHeader title="Paramètres" subtitle={user.email} />
+      <PageHeader eyebrow="Compte" title="Paramètres" subtitle={user.email} />
 
       <section className="card space-y-3" id="identite">
         <h2 className="h2">Comptes Riot</h2>

@@ -95,7 +95,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect(missed.title).toMatch(/Absent du combat perdu à 0:03 \(0–3\)/);
     // Départ nécessaire borné au début de la partie (0:00 de jeu = 2 s dans la vidéo)
     expect(missed.decisionMs).toBe(2000);
-    expect(missed.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "path:actual", "zone:danger"]);
+    expect(missed.annotations.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:actual", "path:actual", "zone:danger"]);
     const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
     const step = (job.result as { steps: { name: string; note?: string }[] }).steps.find((s) => s.name.startsWith("Timeline Riot"))!;
     expect(step.note).toMatch(/2 mort\(s\) réelle\(s\).*1 confirmée.*1 moment\(s\) sans mort/);
@@ -165,7 +165,7 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect(bad.decisionMs).toBe(2000 + 3 * 60_000 + 20_000);
     expect(recs.some((r) => flags(r).includes("missed_back"))).toBe(false); // passage à la boutique à 3:30 : pas un retour « raté »
     const anns = (await prisma.recommendation.findUniqueOrThrow({ where: { id: bad.id }, include: { annotations: true } })).annotations;
-    expect(anns.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:ally", "zone:danger"]);
+    expect(anns.map((a) => `${a.type}:${a.style}`).sort()).toEqual(["arrow:alternative", "highlight:actual", "zone:danger"]);
     expect(await prisma.clip.count({ where: { recordingId: id, kind: "MISTAKE" } })).toBe(2);
     const report = (await prisma.recording.findUniqueOrThrow({ where: { id } })).gameReport as { patterns: string[]; summary: string };
     expect(report.patterns[0]).toBe("À 15 min face à Darius : −14 sbires, 0 or.");

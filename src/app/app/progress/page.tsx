@@ -17,7 +17,7 @@ export default async function ProgressPage() {
   if (p.total === 0)
     return (
       <div>
-        <PageHeader title="Progression" />
+        <PageHeader eyebrow="Performance" title="Progression" />
         <EmptyState title="Pas encore de partie notée" text="Ajoutez des matchs pour suivre vos forces, vos difficultés et vos tendances." action={{ href: "/app/matches/new", label: "Ajouter un match" }} />
       </div>
     );

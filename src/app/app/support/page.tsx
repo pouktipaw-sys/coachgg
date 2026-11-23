@@ -8,7 +8,7 @@ export default async function SupportPage() {
   await requirePageUser();
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title="Aide et support" />
+      <PageHeader eyebrow="Compte" title="Aide et support" />
       <section className="card space-y-2 text-sm">
         <h2 className="h2">Questions fréquentes</h2>
         <p><strong>Ma vidéo reste « en attente de traitement ».</strong> Le worker doit tourner sur le serveur (<code>npm run worker</code>). Vous pouvez relancer un traitement échoué depuis la page de la vidéo.</p>

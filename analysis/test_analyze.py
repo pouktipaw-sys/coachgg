@@ -106,4 +106,4 @@ class TestChipRows(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         rows = chip_rows(d, chips, font(13), 120)
         self.assertEqual([len(r) for r in rows], [1, 1, 1])
-        self.assertEqual(rows[0][0][1], (240, 82, 82))
+        self.assertEqual(rows[0][0][1], (248, 113, 113))

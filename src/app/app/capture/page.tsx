@@ -29,7 +29,7 @@ export default async function CapturePage() {
   const active = devices.filter((d) => !d.revokedAt);
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <PageHeader title="Application PC de capture" subtitle="Enregistre automatiquement la fenêtre du jeu pendant vos parties et envoie la vidéo après le match." />
+      <PageHeader eyebrow="Analyser" title="Application PC de capture" subtitle="Enregistre automatiquement la fenêtre du jeu pendant vos parties et envoie la vidéo après le match." />
 
       <IntegrationNotice title="Version expérimentale — capture Windows non encore validée sur un vrai PC">
         L&apos;agent a été testé avec une source vidéo de test ; la capture de la fenêtre du jeu (Windows) doit être confirmée sur votre PC

@@ -15,7 +15,7 @@ export default async function GoalsPage() {
   const withProgress = await Promise.all(goals.map(async (g) => ({ ...g, progress: await goalProgress(g) })));
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <PageHeader title="Objectifs" subtitle="Un comportement précis, mesuré sur vos parties réelles. Aucun rang n'est promis." />
+      <PageHeader eyebrow="Performance" title="Objectifs" subtitle="Un comportement précis, mesuré sur vos parties réelles. Aucun rang n'est promis." />
       <GoalForm />
       {withProgress.length === 0 ? (
         <EmptyState title="Aucun objectif" text="Créez-en un, ou depuis un rapport de match à partir de vos priorités." />

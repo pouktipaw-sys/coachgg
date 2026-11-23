@@ -26,15 +26,17 @@ FREEZE_SEC = 5.0
 ALT_DRAW_SEC = 1.8
 
 COLORS = {
-    "actual": (240, 82, 82),
-    "alternative": (49, 196, 141),
+    # Mêmes couleurs que le navigateur (src/lib/annotations/schema.ts, STYLE_META) :
+    # toi = doré, ennemis = rouge, alliés = bleu, bonne option = vert.
+    "actual": (251, 191, 36),
+    "alternative": (52, 211, 153),
     "danger": (255, 138, 76),
-    "ally": (63, 131, 248),
-    "enemy": (240, 82, 82),
+    "ally": (96, 165, 250),
+    "enemy": (248, 113, 113),
     "neutral": (229, 231, 235),
 }
 STYLE_LABEL = {
-    "actual": "Trajet réel",
+    "actual": "Toi (trajet réel)",
     "alternative": "Alternative (proposition)",
     "danger": "Zone dangereuse",
     "ally": "Allié",
@@ -188,7 +190,7 @@ def tag(d: ImageDraw.ImageDraw, xy, text, color, f, anchor="l"):
             break
         y += h + 2
     PLACED.append((x, y - h / 2, x + w, y + h / 2))
-    d.rounded_rectangle([x, y - h / 2, x + w, y + h / 2], radius=5, fill=(10, 13, 20, 225), outline=color + (255,), width=1)
+    d.rounded_rectangle([x, y - h / 2, x + w, y + h / 2], radius=5, fill=(8, 8, 18, 225), outline=color + (255,), width=1)
     d.text((x + 7, y - h / 2 + 4), text, font=f, fill=(255, 255, 255, 255))
 
 
@@ -203,8 +205,6 @@ def draw_annotation(layer: Image.Image, a: dict, prog: float, alpha: float, sp: 
     d = ImageDraw.Draw(layer)
     style, space = a["style"], a.get("space", "FRAME")
     col = COLORS.get(style, (255, 255, 255))
-    if a["type"] == "path" and "times" in a["geometry"] and style == "actual":
-        col = (251, 191, 36)  # reconstitution : « toi » en doré, distinct des ennemis (rouge)
     rgba = col + (int(255 * alpha),)
     small = space == "MINIMAP" and not getattr(sp, "zoomed", False)
     width = 3 if small else 5
@@ -224,11 +224,11 @@ def draw_annotation(layer: Image.Image, a: dict, prog: float, alpha: float, sp: 
         s = 6 if small else 9
         if "times" in g:  # reconstitution : joueur = point plein, nom qui suit la tête du trajet
             if prog > 0:
-                d.ellipse([head[0] - s, head[1] - s, head[0] + s, head[1] + s], fill=rgba, outline=(10, 13, 20, int(255 * alpha)), width=2)
+                d.ellipse([head[0] - s, head[1] - s, head[0] + s, head[1] + s], fill=rgba, outline=(8, 8, 18, int(255 * alpha)), width=2)
                 if not small and label:
                     tag(d, (head[0] + 12, head[1] - 12), label, col, f)
             return
-        d.ellipse([head[0] - s, head[1] - s, head[0] + s, head[1] + s], fill=(10, 13, 20, int(255 * alpha)), outline=rgba, width=2)
+        d.ellipse([head[0] - s, head[1] - s, head[0] + s, head[1] + s], fill=(8, 8, 18, int(255 * alpha)), outline=rgba, width=2)
         if style == "actual":  # croix = trajet réel
             d.line([head[0] - s / 2, head[1] - s / 2, head[0] + s / 2, head[1] + s / 2], fill=rgba, width=2)
             d.line([head[0] + s / 2, head[1] - s / 2, head[0] - s / 2, head[1] + s / 2], fill=rgba, width=2)
@@ -259,7 +259,7 @@ def draw_annotation(layer: Image.Image, a: dict, prog: float, alpha: float, sp: 
             d.ellipse(box, outline=rgba, width=2)
             if style == "danger":  # triangle « ! »
                 t = (c[0], c[1] - r)
-                d.polygon([(t[0], t[1] - 12), (t[0] + 11, t[1] + 8), (t[0] - 11, t[1] + 8)], fill=(10, 13, 20, 255), outline=rgba)
+                d.polygon([(t[0], t[1] - 12), (t[0] + 11, t[1] + 8), (t[0] - 11, t[1] + 8)], fill=(8, 8, 18, 255), outline=rgba)
                 d.text((t[0] - 3, t[1] - 7), "!", font=f, fill=rgba)
             if prog >= 1:
                 tag(d, (c[0], c[1] + r + 16), label, col, f, anchor="m")
@@ -305,7 +305,7 @@ def wrap(d, text, f, max_w):
     return lines
 
 
-CHIP_TONE = {"bad": (240, 82, 82), "warn": (251, 191, 36), "good": (49, 196, 141), "info": (124, 196, 255)}
+CHIP_TONE = {"bad": (248, 113, 113), "warn": (251, 191, 36), "good": (52, 211, 153), "info": (89, 213, 255)}  # = CHIP_COLOR (MomentCard.tsx)
 
 
 def chip_rows(d, chips, f, max_w):
@@ -355,7 +355,7 @@ def explanation_panel(layer, m, fonts, w, h):
         idx = max(i for i, (k, _) in enumerate(lines) if k == "cont")
         lines.pop(idx)
     ph = 24 + sum(heights[k] for k, _ in lines)
-    d.rounded_rectangle([x0, y0, x0 + pw, y0 + ph], radius=12, fill=(10, 13, 20, 230), outline=(76, 157, 255, 255), width=2)
+    d.rounded_rectangle([x0, y0, x0 + pw, y0 + ph], radius=12, fill=(8, 8, 18, 230), outline=(146, 46, 255, 255), width=2)
     y = y0 + 14
     for kind, content in lines:
         if kind == "title":
@@ -364,18 +364,18 @@ def explanation_panel(layer, m, fonts, w, h):
             cx = x0 + 16
             for text, col, tw in content:
                 # Fond opaque (teinte mêlée au fond du panneau) : un fond transparent laisserait voir la vidéo.
-                bg = tuple(int(c * 0.28 + p * 0.72) for c, p in zip(col, (10, 13, 20)))
+                bg = tuple(int(c * 0.28 + p * 0.72) for c, p in zip(col, (8, 8, 18)))
                 d.rounded_rectangle([cx, y + 1, cx + tw, y + 23], radius=11, fill=bg + (255,), outline=col + (255,), width=1)
                 d.text((cx + 9, y + 4), text, font=fonts["small"], fill=(255, 255, 255, 255))
                 cx += tw + 6
         elif kind == "label":
             d.text((x0 + 16, y + 4), content.upper(), font=fonts["small"], fill=(139, 149, 168, 255))
         elif kind == "alt":
-            d.text((x0 + 16, y), content, font=body, fill=(49, 196, 141, 255))
+            d.text((x0 + 16, y), content, font=body, fill=(52, 211, 153, 255))
         elif kind == "muted":
             d.text((x0 + 16, y + 2), content, font=fonts["small"], fill=(139, 149, 168, 255))
         elif kind == "bullet":
-            d.text((x0 + 16, y), "•", font=body, fill=(124, 196, 255, 255))
+            d.text((x0 + 16, y), "•", font=body, fill=(196, 139, 255, 255))
             d.text((x0 + 32, y), content, font=body, fill=(230, 233, 239, 255))
         elif kind == "cont":
             d.text((x0 + 32, y), content, font=body, fill=(230, 233, 239, 255))
@@ -393,23 +393,23 @@ def phase_bar(layer, m, t, fonts, w, h):
     x0, x1, y = 18, int(w * 0.42), h - 22
     span = x1 - x0
     X = lambda ms: x0 + span * (min(max(ms, a), e) - a) / (e - a)  # noqa: E731
-    d.rounded_rectangle([x0 - 8, y - 26, x1 + 8, y + 12], radius=8, fill=(10, 13, 20, 200))
-    for (p0, p1, col, name) in ((a, s, (139, 149, 168), "Contexte"), (s, dc, (76, 157, 255), "Ralenti"), (dc, e, (240, 82, 82), "Conséquence")):
+    d.rounded_rectangle([x0 - 8, y - 26, x1 + 8, y + 12], radius=8, fill=(8, 8, 18, 200))
+    for (p0, p1, col, name) in ((a, s, (139, 149, 168), "Contexte"), (s, dc, (196, 139, 255), "Ralenti"), (dc, e, (248, 113, 113), "Conséquence")):
         if p1 <= p0:
             continue
         d.rounded_rectangle([X(p0), y - 3, X(p1), y + 3], radius=3, fill=col + (230,))
         if X(p1) - X(p0) > d.textlength(name, font=fonts["small"]) + 6:
             d.text((X(p0) + 2, y - 22), name, font=fonts["small"], fill=col + (255,))
     xd = X(dc)
-    d.polygon([(xd, y - 9), (xd + 7, y), (xd, y + 9), (xd - 7, y)], fill=(251, 191, 36, 255), outline=(10, 13, 20, 255))
+    d.polygon([(xd, y - 9), (xd + 7, y), (xd, y + 9), (xd - 7, y)], fill=(251, 191, 36, 255), outline=(8, 8, 18, 255))
     xc = X(t)
     d.line([(xc, y - 12), (xc, y + 10)], fill=(255, 255, 255, 255), width=3)
 
 
-def banner(layer, text, f, color=(76, 157, 255)):
+def banner(layer, text, f, color=(196, 139, 255)):
     d = ImageDraw.Draw(layer)
     bbox = d.textbbox((0, 0), text, font=f)
-    d.rounded_rectangle([16, 14, 16 + bbox[2] + 24, 14 + bbox[3] + 16], radius=8, fill=(10, 13, 20, 215), outline=color + (255,), width=1)
+    d.rounded_rectangle([16, 14, 16 + bbox[2] + 24, 14 + bbox[3] + 16], radius=8, fill=(8, 8, 18, 215), outline=color + (255,), width=1)
     d.text((28, 20), text, font=f, fill=(255, 255, 255, 255))
 
 
@@ -417,7 +417,7 @@ def footer(layer, text, f):
     d = ImageDraw.Draw(layer)
     w, h = layer.size
     bbox = d.textbbox((0, 0), text, font=f)
-    d.rounded_rectangle([w - bbox[2] - 34, h - bbox[3] - 26, w - 12, h - 10], radius=6, fill=(10, 13, 20, 190))
+    d.rounded_rectangle([w - bbox[2] - 34, h - bbox[3] - 26, w - 12, h - 10], radius=6, fill=(8, 8, 18, 190))
     d.text((w - bbox[2] - 23, h - bbox[3] - 20), text, font=f, fill=(170, 179, 197, 255))
 
 
@@ -473,14 +473,14 @@ def render(spec: dict):
             img = img.copy()
             img.paste(crop, (ix, iy))
             d = ImageDraw.Draw(layer)
-            d.rectangle([mx - 2, my - 2, mx + mw + 2, my + mh + 2], outline=(76, 157, 255, 230), width=2)
-            d.rounded_rectangle([ix - 3, iy - 3, ix + side + 3, iy + side + 3], radius=6, outline=(76, 157, 255, 255), width=3)
-            tag(d, (ix + 8, iy + side + 18), "Minimap agrandie", (76, 157, 255), fonts["tag"])
+            d.rectangle([mx - 2, my - 2, mx + mw + 2, my + mh + 2], outline=(146, 46, 255, 230), width=2)
+            d.rounded_rectangle([ix - 3, iy - 3, ix + side + 3, iy + side + 3], radius=6, outline=(196, 139, 255, 255), width=3)
+            tag(d, (ix + 8, iy + side + 18), "Minimap agrandie", (196, 139, 255), fonts["tag"])
             # Légende des trajets reconstitués (seulement s'il y en a)
             styles = {x[0]["style"] for x in mm_active if x[0]["type"] == "path" and "times" in x[0]["geometry"]}
             if styles:
                 lx, ly = ix + 4, iy + side + 44
-                d.rounded_rectangle([ix - 3, ly - 14, ix + side + 3, ly + 30], radius=6, fill=(10, 13, 20, 225))
+                d.rounded_rectangle([ix - 3, ly - 14, ix + side + 3, ly + 30], radius=6, fill=(8, 8, 18, 225))
                 for st, name, colr in (("actual", "Toi", (251, 191, 36)), ("enemy", "Ennemis", COLORS["enemy"]), ("ally", "Alliés", COLORS["ally"])):
                     if st not in styles:
                         continue
@@ -558,7 +558,7 @@ def render_card(spec: dict):
         return encode_still(chapter_card(img, d, spec, out_w, out_h, scale), spec, out_w, out_h)
     f_title, f_sub = font(int(40 * scale) or 20, True), font(int(22 * scale) or 12)
     f_label, f_body = font(int(16 * scale) or 10, True), font(int(22 * scale) or 12)
-    d.rectangle([0, 0, out_w, int(6 * scale) or 3], fill=(76, 157, 255))
+    d.rectangle([0, 0, out_w, int(6 * scale) or 3], fill=(196, 139, 255))
     x, y = int(70 * scale), int(60 * scale)
     for line in wrap(d, spec.get("title", ""), f_title, out_w - 2 * x):
         d.text((x, y), line, font=f_title, fill=(255, 255, 255))
@@ -570,7 +570,7 @@ def render_card(spec: dict):
         y += int(14 * scale)
         if y > out_h - 80 * scale:
             break
-        d.text((x, y), sec.get("label", "").upper(), font=f_label, fill=tuple(sec.get("color", (76, 157, 255))))
+        d.text((x, y), sec.get("label", "").upper(), font=f_label, fill=tuple(sec.get("color", (196, 139, 255))))
         y += int(28 * scale)
         for item in sec.get("lines", []):
             for i, line in enumerate(wrap(d, item, f_body, out_w - 2 * x - 30)):
