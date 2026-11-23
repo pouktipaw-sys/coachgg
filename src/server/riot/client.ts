@@ -229,7 +229,7 @@ export type RiotMatch = {
   };
 };
 
-const QUEUES: Record<number, string> = { 420: "RANKED_SOLO", 440: "RANKED_FLEX", 400: "NORMAL", 430: "NORMAL", 490: "NORMAL", 450: "ARAM", 0: "CUSTOM" };
+const QUEUES: Record<number, string> = { 420: "RANKED_SOLO", 440: "RANKED_FLEX", 400: "NORMAL", 430: "NORMAL", 490: "NORMAL", 450: "ARAM", 1700: "ARENA", 1710: "ARENA", 900: "URF", 1900: "URF", 0: "CUSTOM" };
 const POSITIONS = new Set(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]);
 
 export function convertRiotMatch(m: RiotMatch) {

@@ -24,7 +24,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
   let error: string | null = null;
   if (q) {
     try {
-      data = await lookupPlayer(q, platform);
+      data = await lookupPlayer(q, platform, { page: Math.max(0, Number(sp.page) || 0) });
     } catch (e) {
       error = e instanceof HttpError ? e.message : "Recherche impossible pour le moment.";
     }
@@ -108,7 +108,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
             </section>
 
             <section className="card lg:col-span-2">
-              <SectionHeader icon="stats" title="Dernières parties" />
+              <SectionHeader icon="stats" title={data.page ? `Parties ${data.page * 20 + 1} à ${data.page * 20 + data.games.length}` : "Dernières parties"} sub="Résumé et champions calculés sur ces parties" />
               <ul className="space-y-1.5" data-testid="player-games">
                 {data.games.map((g) => (
                   <li key={g.matchId} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${g.win ? "bg-win/[0.05] shadow-[inset_3px_0_0_#34d399]" : "bg-loss/[0.05] shadow-[inset_3px_0_0_#f87171]"}`}>
@@ -122,6 +122,10 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
                   </li>
                 ))}
               </ul>
+              <div className="mt-3 flex flex-wrap justify-between gap-2 text-sm">
+                {data.page > 0 ? <Link className="btn-ghost" href={`/app/players?q=${encodeURIComponent(q)}&platform=${platform}&page=${data.page - 1}`}>← Plus récentes</Link> : <span />}
+                {data.hasMore && <Link className="btn-ghost" href={`/app/players?q=${encodeURIComponent(q)}&platform=${platform}&page=${data.page + 1}`} data-testid="older-games">Parties plus anciennes →</Link>}
+              </div>
             </section>
           </div>
         </>

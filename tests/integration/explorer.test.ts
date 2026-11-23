@@ -74,6 +74,7 @@ describe("exploration Riot", () => {
     expect(counter.match).toBe(3);
     await lookupPlayer("Scout#EUW", "EUW1", { client: fakeRiot(counter) });
     expect(counter.match).toBe(3); // aucune partie redemandée à Riot
+    expect(r).toMatchObject({ page: 0, hasMore: false });
   });
 
   it("erreurs claires : Riot ID mal écrit, joueur introuvable, serveur inconnu", async () => {

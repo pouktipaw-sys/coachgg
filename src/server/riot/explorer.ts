@@ -88,7 +88,8 @@ export function rowFromMatch(m: RiotMatch, puuid: string): (GameRow & { matchId:
 }
 
 /** Recherche de joueur : profil, rang, champions les plus joués, dernières parties (20 max). */
-export async function lookupPlayer(riotId: string, platform: string, opts: { count?: number; client?: RiotClient } = {}) {
+/** page : 0 = 20 parties les plus récentes, 1 = les 20 suivantes… (jusqu'à 200 parties). */
+export async function lookupPlayer(riotId: string, platform: string, opts: { count?: number; page?: number; client?: RiotClient } = {}) {
   const { gameName, tagLine } = parseRiotId(riotId);
   const plat = checkPlatform(platform);
   const c = client(opts.client);
@@ -96,7 +97,7 @@ export async function lookupPlayer(riotId: string, platform: string, opts: { cou
     const acc = await c.accountByRiotId(gameName, tagLine, plat);
     const [entries, ids, masteries] = await Promise.all([
       c.leagueEntries(acc.puuid, plat),
-      c.matchIds(acc.puuid, plat, Math.min(20, opts.count ?? 20)),
+      c.matchIds(acc.puuid, plat, Math.min(20, opts.count ?? 20), Math.max(0, Math.min(9, opts.page ?? 0)) * Math.min(20, opts.count ?? 20)),
       c.topMasteries(acc.puuid, plat, 5).catch(() => []),
     ]);
     const matches = await pool(ids, 4, (id) => cachedMatch(c, id).catch(() => null));
@@ -104,6 +105,8 @@ export async function lookupPlayer(riotId: string, platform: string, opts: { cou
     const champs = await ddChampions().catch(() => []);
     return {
       account: { gameName: acc.gameName, tagLine: acc.tagLine, platform: plat },
+      page: Math.max(0, Math.min(9, opts.page ?? 0)),
+      hasMore: ids.length === Math.min(20, opts.count ?? 20) && (opts.page ?? 0) < 9,
       ranks: rank(entries),
       summary: summarize(games),
       champions: byChampion(games).slice(0, 8),
@@ -161,9 +164,9 @@ export async function liveGame(riotId: string, platform: string, opts: { client?
 }
 
 /** Tes parties réelles (base CoachGG) au format GameRow, avec l'adversaire de voie et les objets/runes. */
-export async function userGames(userIds: string[], opts: { champion?: string } = {}): Promise<(GameRow & { userId: string; matchId: string })[]> {
+export async function userGames(userIds: string[], opts: { champion?: string; mode?: string } = {}): Promise<(GameRow & { userId: string; matchId: string })[]> {
   const parts = await prisma.matchParticipant.findMany({
-    where: { userId: { in: userIds }, match: { isDemo: false }, ...(opts.champion ? { championName: { equals: opts.champion, mode: "insensitive" } } : {}) },
+    where: { userId: { in: userIds }, match: { isDemo: false, ...(opts.mode ? { gameMode: opts.mode } : {}) }, ...(opts.champion ? { championName: { equals: opts.champion, mode: "insensitive" } } : {}) },
     include: {
       statistics: { select: { kills: true, deaths: true, assists: true, creepScore: true, items: true, runes: true } },
       match: { select: { id: true, durationSec: true, gameStartAt: true, createdAt: true, participants: { select: { teamSide: true, role: true, championName: true } } } },

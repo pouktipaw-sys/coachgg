@@ -209,6 +209,9 @@ model PlayerProfile {
   primaryRole           LolRole?
   secondaryRole         LolRole?
   favoriteChampions     String[]
+  // Profil public partageable (désactivé par défaut) : /u/<publicSlug>
+  publicProfile         Boolean          @default(false)
+  publicSlug            String?          @unique
   progressGoal          String?
   explanationLevel      ExplanationLevel @default(INTERMEDIATE)
   explanationDensity    String           @default("normal") // concise | normal | detailed

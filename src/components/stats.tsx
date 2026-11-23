@@ -8,6 +8,8 @@ export const MODE_LABELS: Record<string, string> = {
   RANKED_FLEX: "Classée flexible",
   NORMAL: "Normale",
   ARAM: "ARAM",
+  ARENA: "Arena",
+  URF: "URF",
   CUSTOM: "Personnalisée",
   OTHER: "Autre",
 };
@@ -117,6 +119,39 @@ export function MinuteChart({ values, label, color = "#c48bff", height = 90 }: {
         <text x={30} y={height - 4} fontSize={10} fill="#a7a0bd">0 min</text>
         <text x={w - 10} y={height - 4} fontSize={10} fill="#a7a0bd" textAnchor="end">{values.length - 1} min</text>
         <path d={d} fill="none" stroke={color} strokeWidth={2} />
+      </svg>
+    </figure>
+  );
+}
+
+/** Écart minute par minute (toi − adversaire) : au-dessus de zéro en vert, en dessous en rouge. Valeurs réelles uniquement. */
+export function DiffChart({ values, label, unit, height = 110 }: { values: number[]; label: string; unit: string; height?: number }) {
+  if (values.length < 2) return null;
+  const w = 360;
+  const max = Math.max(1, ...values.map((v) => Math.abs(v)));
+  const mid = height / 2;
+  const x = (i: number) => 34 + (i / (values.length - 1)) * (w - 44);
+  const y = (v: number) => mid - (v / max) * (mid - 12);
+  const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = `${d} L${x(values.length - 1).toFixed(1)},${mid} L${x(0).toFixed(1)},${mid} Z`;
+  const last = values.at(-1)!;
+  const id = `diff-${label.replace(/\W/g, "")}`;
+  return (
+    <figure>
+      <figcaption className="mb-1 text-xs text-muted">
+        {label} — <span className={last >= 0 ? "text-win" : "text-loss"}>{last >= 0 ? "+" : "−"}{Math.abs(last).toLocaleString("fr-FR")} {unit}</span> à {values.length - 1} min
+      </figcaption>
+      <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img" aria-label={`${label} par minute : ${values.join(", ")}`}>
+        <defs>
+          <clipPath id={`${id}-up`}><rect x="0" y="0" width={w} height={mid} /></clipPath>
+          <clipPath id={`${id}-down`}><rect x="0" y={mid} width={w} height={mid} /></clipPath>
+        </defs>
+        <line x1={34} x2={w - 10} y1={mid} y2={mid} stroke="#30234b" />
+        <text x={0} y={14} fontSize={10} fill="#a7a0bd">+{max.toLocaleString("fr-FR")}</text>
+        <text x={0} y={height - 4} fontSize={10} fill="#a7a0bd">−{max.toLocaleString("fr-FR")}</text>
+        <path d={area} fill="#34d399" fillOpacity={0.22} clipPath={`url(#${id}-up)`} />
+        <path d={area} fill="#f87171" fillOpacity={0.22} clipPath={`url(#${id}-down)`} />
+        <path d={d} fill="none" stroke="#f5f2ff" strokeWidth={1.8} strokeLinejoin="round" />
       </svg>
     </figure>
   );

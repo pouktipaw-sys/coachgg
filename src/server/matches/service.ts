@@ -36,7 +36,7 @@ export const manualMatchSchema = z
   .object({
     gameStartAt: z.coerce.date().nullish(),
     durationSec: z.number().int().min(60).max(4 * 3600),
-    gameMode: z.enum(["RANKED_SOLO", "RANKED_FLEX", "NORMAL", "ARAM", "CUSTOM", "OTHER"]),
+    gameMode: z.enum(["RANKED_SOLO", "RANKED_FLEX", "NORMAL", "ARAM", "ARENA", "URF", "CUSTOM", "OTHER"]),
     participants: z.array(participantSchema).min(1).max(10),
     teamTotals: z.object({ "100": sideTotals.optional(), "200": sideTotals.optional() }).optional(),
   })

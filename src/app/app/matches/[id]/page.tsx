@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
 import { Badge, PageHeader } from "@/components/ui";
-import { ComponentBars, MinuteChart, MODE_LABELS, RELIABILITY, ROLE_LABELS, ScorePill, fmtDuration, fmtNum } from "@/components/stats";
+import { ddItems, ddVersion } from "@/server/riot/ddragon";
+import { ComponentBars, DiffChart, MinuteChart, MODE_LABELS, RELIABILITY, ROLE_LABELS, ScorePill, fmtDuration, fmtNum } from "@/components/stats";
 import { requirePageUser } from "@/server/auth/page";
 import { HttpError } from "@/server/errors";
 import { getMatchReport } from "@/server/matches/service";
@@ -31,6 +32,7 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
   const me = match.participants.find((p) => p.userId === user.id) ?? null;
   const myTimeline = (me?.statistics?.timeline ?? null) as { gold: number[]; cs: number[]; purchases: { t: number; itemId: number }[] } | null;
   const score = me?.scores.find((s) => s.scoreVersionId === CURRENT_SCORE_CONFIG.version) ?? null;
+  const [ddV, ddItemsMap] = myTimeline?.purchases.length ? await Promise.all([ddVersion().catch(() => null), ddItems().catch(() => ({}) as Awaited<ReturnType<typeof ddItems>>)]) : [null, {} as Awaited<ReturnType<typeof ddItems>>];
   const [profile, progression, recordings, myTeams] = await Promise.all([
     prisma.playerProfile.findUnique({ where: { userId: user.id } }),
     me ? progressionFor(user.id, me.id) : null,
@@ -209,25 +211,57 @@ export default async function MatchReportPage({ params }: { params: Promise<{ id
 
       {(board.me || board.results.some((r) => r.tally.voters > 0)) && <PeerVotePanel matchId={id} initial={JSON.parse(JSON.stringify(board)) as VoteBoard} />}
 
-      {myTimeline && (
-        <section className="card space-y-4" data-testid="match-timeline">
-          <h2 className="h2">Évolution dans la partie</h2>
-          <div className="grid gap-6 md:grid-cols-2">
-            <MinuteChart values={myTimeline.gold} label="Or cumulé" color="#fbbf24" />
-            <MinuteChart values={myTimeline.cs} label="CS cumulés" color="#34d399" />
-          </div>
-          {myTimeline.purchases.length > 0 && (
-            <div>
-              <p className="label">Achats</p>
-              <p className="text-xs text-muted">
-                {myTimeline.purchases.slice(0, 40).map((p) => `${formatMs(p.t)} objet n°${p.itemId}`).join(" · ")}
-              </p>
-              <p className="mt-1 text-[11px] text-muted">Identifiants d&apos;objets Riot (les noms nécessitent les données statiques Data Dragon, non intégrées).</p>
+      {myTimeline && (() => {
+        // Adversaire direct : même rôle, autre équipe (sa timeline est importée avec la partie).
+        const opp = me?.role ? match.participants.find((p) => p.teamSide !== me.teamSide && p.role === me.role) : undefined;
+        const oppTl = (opp?.statistics?.timeline ?? null) as { gold: number[]; cs: number[] } | null;
+        const diff = (a: number[], b: number[]) => a.slice(0, Math.min(a.length, b.length)).map((v, i) => v - b[i]!);
+        // Passages à la boutique : achats à moins de 45 s d'intervalle regroupés.
+        const backs: { t: number; items: number[] }[] = [];
+        for (const p of myTimeline.purchases) {
+          const last = backs.at(-1);
+          if (last && p.t - last.t <= 45_000) last.items.push(p.itemId);
+          else backs.push({ t: p.t, items: [p.itemId] });
+        }
+        return (
+          <section className="card space-y-5" data-testid="match-timeline">
+            <h2 className="h2">Évolution dans la partie</h2>
+            <div className="grid gap-6 md:grid-cols-2">
+              <MinuteChart values={myTimeline.gold} label="Or cumulé" color="#fbbf24" />
+              <MinuteChart values={myTimeline.cs} label="Sbires cumulés" color="#34d399" />
             </div>
-          )}
-          <p className="text-xs text-muted">Source : timeline MATCH-V5 de l&apos;API Riot (une valeur par minute).</p>
-        </section>
-      )}
+            {oppTl && (
+              <div className="grid gap-6 md:grid-cols-2" data-testid="lane-diff">
+                <DiffChart values={diff(myTimeline.gold, oppTl.gold)} label={`Écart d'or face à ${opp!.championName}`} unit="or" />
+                <DiffChart values={diff(myTimeline.cs, oppTl.cs)} label={`Écart de sbires face à ${opp!.championName}`} unit="sbires" />
+              </div>
+            )}
+            {backs.length > 0 && (
+              <div>
+                <p className="label">Achats (par passage à la boutique)</p>
+                <ol className="space-y-1.5" data-testid="purchases">
+                  {backs.map((b, i) => (
+                    <li key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="w-12 font-display text-accent-2">{formatMs(b.t)}</span>
+                      {b.items.map((it, k) => (
+                        <span key={k} title={ddItemsMap[String(it)]?.name ?? `Objet ${it}`}>
+                          {ddV ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={`https://ddragon.leagueoflegends.com/cdn/${ddV}/img/item/${it}.png`} alt={ddItemsMap[String(it)]?.name ?? `Objet ${it}`} width={26} height={26} className="rounded-md border border-line/70" loading="lazy" />
+                          ) : (
+                            <span className="badge border-line text-muted">{ddItemsMap[String(it)]?.name ?? `Objet ${it}`}</span>
+                          )}
+                        </span>
+                      ))}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            <p className="text-xs text-muted">Source : timeline MATCH-V5 de l&apos;API Riot (une valeur d&apos;or et de sbires par minute, achats à la seconde).</p>
+          </section>
+        );
+      })()}
 
       {teamReports.length > 0 && (
         <section className="card">

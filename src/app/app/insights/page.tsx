@@ -9,9 +9,13 @@ import { byChampion, byOpponent, byRole, sampleNote, summarize } from "@/lib/rio
 export const metadata = { title: "Stats avancées" };
 const n1 = (x: number | null) => (x == null ? "—" : String(x).replace(".", ","));
 
-export default async function InsightsPage() {
+const MODES = [["", "Tous les modes"], ["RANKED_SOLO", "Classée solo/duo"], ["RANKED_FLEX", "Classée flexible"], ["NORMAL", "Normale"], ["ARAM", "ARAM"], ["ARENA", "Arena"]] as const;
+
+export default async function InsightsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requirePageUser();
-  const [games, v, champs] = await Promise.all([userGames([user.id]), ddVersion().catch(() => null), ddChampions().catch(() => [])]);
+  const sp = await searchParams;
+  const mode = MODES.some(([k]) => k && k === sp.mode) ? sp.mode : undefined;
+  const [games, v, champs] = await Promise.all([userGames([user.id], { mode }), ddVersion().catch(() => null), ddChampions().catch(() => [])]);
   const s = summarize(games);
   const champions = byChampion(games);
   const roles = byRole(games);
@@ -23,6 +27,14 @@ export default async function InsightsPage() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Performance" title="Stats avancées" subtitle="Tes résultats par champion, par rôle et contre chaque adversaire de voie — calculés sur tes vraies parties." />
+      <nav aria-label="Mode de jeu" className="flex flex-wrap gap-1.5">
+        {MODES.map(([k, l]) => (
+          <Link key={k || "all"} href={k ? `/app/insights?mode=${k}` : "/app/insights"} aria-current={(mode ?? "") === k ? "page" : undefined}
+            className={`rounded-full border px-3 py-1 text-xs transition-colors ${(mode ?? "") === k ? "border-accent bg-accent/20 text-white" : "border-line text-muted hover:text-text"}`}>
+            {l}
+          </Link>
+        ))}
+      </nav>
       {games.length === 0 ? (
         <EmptyState icon="stats" title="Aucune partie" text="Connecte ton compte Riot ou saisis des parties pour voir tes statistiques détaillées." action={{ href: "/app/matches", label: "Mes matchs" }} />
       ) : (

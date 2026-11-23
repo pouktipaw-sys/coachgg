@@ -7,6 +7,7 @@ import { formatRank, type RankEntry } from "@/components/stats";
 import { integrationStatus } from "@/lib/env";
 import { ChangeEmailForm, ChangePasswordForm, SessionsForm } from "@/components/settings/AccountForms";
 import { countSessions } from "@/server/auth/service";
+import { PublicProfileToggle } from "@/components/settings/PublicProfileToggle";
 
 export const metadata = { title: "Paramètres" };
 
@@ -73,6 +74,11 @@ export default async function SettingsPage() {
           <li>Les fichiers vidéo sont stockés sur le serveur de cette instance, servis uniquement après vérification de vos droits.</li>
           <li>Si vous choisissez une durée de conservation, le worker supprime automatiquement (chaque heure) les vidéos plus anciennes, avec leurs moments et annotations.</li>
         </ul>
+      </section>
+
+      <section className="card space-y-3" id="profil-public">
+        <h2 className="h2">Profil public</h2>
+        <PublicProfileToggle enabled={profile.publicProfile} slug={profile.publicSlug} />
       </section>
 
       <section className="card space-y-4" id="compte">
