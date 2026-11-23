@@ -1027,3 +1027,38 @@ model MetaMatchup {
 
   @@id([patch, championId, role, opponentId])
 }
+
+// Choix « méta » génériques par champion : sorts d'invocateur (spells), ordre de montée des sorts (skills),
+// trois premiers objets finis dans l'ordre d'achat (core). key = valeur du choix, ex. « 4,14 », « Q>E>W », « 3089>3020>3157 ».
+model MetaChoice {
+  patch      String
+  championId Int
+  role       String
+  kind       String
+  key        String
+  games      Int    @default(0)
+  wins       Int    @default(0)
+
+  @@id([patch, championId, role, kind, key])
+}
+
+// Meilleurs joueurs par champion (parties classées publiques collectées) : données publiques de Riot.
+model MetaPlayerChampion {
+  puuid      String
+  championId Int
+  platform   String
+  riotId     String?
+  games      Int      @default(0)
+  wins       Int      @default(0)
+  lastPlayed DateTime @default(now())
+
+  @@id([puuid, championId])
+  @@index([championId])
+}
+
+// État applicatif (clé / valeur) : ex. dernière version du jeu vue, pour les notifications de patch.
+model AppState {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

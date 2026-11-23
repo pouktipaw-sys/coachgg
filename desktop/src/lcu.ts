@@ -116,7 +116,7 @@ export class Lcu {
     sets.push({
       title: title.slice(0, 60), type: "custom", map: "SR", mode: "any", sortrank: 0, startedFrom: "blank",
       associatedChampions: [championId], associatedMaps: [11], preferredItemSlots: [],
-      blocks: [{ type: "Objets les plus construits (CoachGG)", items: items.map((id) => ({ id: String(id), count: 1 })) }],
+      blocks: [{ type: "Ordre d'achat conseillé (CoachGG)", items: items.map((id) => ({ id: String(id), count: 1 })) }],
     });
     const r = await this.t("PUT", `/lol-item-sets/v1/item-sets/${summonerId}/sets`, { ...data, itemSets: sets, timestamp: Date.now() });
     return r.status >= 200 && r.status < 300;

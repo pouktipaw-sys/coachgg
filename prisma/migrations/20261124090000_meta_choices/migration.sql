@@ -1,0 +1,4 @@
+CREATE TABLE "MetaChoice" ("patch" TEXT NOT NULL, "championId" INTEGER NOT NULL, "role" TEXT NOT NULL, "kind" TEXT NOT NULL, "key" TEXT NOT NULL, "games" INTEGER NOT NULL DEFAULT 0, "wins" INTEGER NOT NULL DEFAULT 0, CONSTRAINT "MetaChoice_pkey" PRIMARY KEY ("patch","championId","role","kind","key"));
+CREATE TABLE "MetaPlayerChampion" ("puuid" TEXT NOT NULL, "championId" INTEGER NOT NULL, "platform" TEXT NOT NULL, "riotId" TEXT, "games" INTEGER NOT NULL DEFAULT 0, "wins" INTEGER NOT NULL DEFAULT 0, "lastPlayed" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "MetaPlayerChampion_pkey" PRIMARY KEY ("puuid","championId"));
+CREATE INDEX "MetaPlayerChampion_championId_idx" ON "MetaPlayerChampion"("championId");
+CREATE TABLE "AppState" ("key" TEXT NOT NULL, "value" JSONB NOT NULL, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "AppState_pkey" PRIMARY KEY ("key"));

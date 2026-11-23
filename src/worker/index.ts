@@ -12,6 +12,7 @@ import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
 import { runRiotSync } from "../server/riot/import";
 import { markRecapFailed, renderRecap } from "../server/recap";
 import { runMetaCrawl, scheduleMetaCrawls } from "../server/meta";
+import { checkNewPatch } from "../server/patchNotes";
 
 const workerId = `${os.hostname()}:${process.pid}`;
 let stopping = false;
@@ -95,6 +96,9 @@ async function main() {
       await scheduleMetaCrawls()
         .then((n) => n && console.log(`[worker] statistiques méta : ${n} collecte(s) planifiée(s)`))
         .catch((e) => console.error("[worker] planification méta échouée :", e instanceof Error ? e.message : e));
+      await checkNewPatch()
+        .then((r) => r.changed && console.log(`[worker] nouveau patch ${r.version} : ${r.notified} joueur(s) prévenu(s)`))
+        .catch(() => {}); // données du jeu injoignables : on réessaie à l'heure suivante
       await sendWeeklyReviews()
         .then((n) => n && console.log(`[worker] bilans hebdomadaires : ${n} notification(s)`))
         .catch((e) => console.error("[worker] bilans hebdomadaires échoués :", e instanceof Error ? e.message : e));

@@ -146,7 +146,7 @@ export type RiotTimeline = {
   info: {
     frames: {
       timestamp: number;
-      events: { type: string; timestamp: number; victimId?: number; killerId?: number; participantId?: number; itemId?: number }[];
+      events: { type: string; timestamp: number; victimId?: number; killerId?: number; participantId?: number; itemId?: number; skillSlot?: number; levelUpType?: string }[];
       participantFrames?: Record<string, { totalGold?: number; minionsKilled?: number; jungleMinionsKilled?: number; level?: number }>;
     }[];
   };
@@ -224,6 +224,9 @@ export type RiotParticipant = {
   item5?: number;
   item6?: number;
   championId?: number;
+  summoner1Id?: number;
+  summoner2Id?: number;
+  placement?: number; // Arena : place finale (1 à 8)
   perks?: { styles: { style: number; selections: { perk: number }[] }[]; statPerks?: { offense: number; flex: number; defense: number } };
 };
 

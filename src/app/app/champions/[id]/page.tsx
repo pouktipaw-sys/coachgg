@@ -3,11 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState, PageHeader, ProgressBar, SectionHeader, StatTile } from "@/components/ui";
 import { ChampIcon, ItemIcon, ROLE_FR, Winrate } from "@/components/explore/Bits";
-import { metaBuild } from "@/server/meta";
+import { championLeaders, metaBuild } from "@/server/meta";
 import { parseRunePageKey } from "@/lib/riot/meta";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
-import { ddChampionDetail, ddChampions, ddItems, ddRunes, ddText, ddVersion, findChampion, img, isFinishedItem, normChamp } from "@/server/riot/ddragon";
+import { ddChampionDetail, ddChampions, ddItems, ddRunes, ddSummonerSpells, ddText, ddVersion, findChampion, img, isFinishedItem, normChamp } from "@/server/riot/ddragon";
 import { friendIds, userGames } from "@/server/riot/explorer";
 import { buildStats, byOpponent, sampleNote, summarize } from "@/lib/riot/insights";
 
@@ -36,7 +36,9 @@ export default async function ChampionPage({ params, searchParams }: { params: P
   const keystone = new Map(runes.flatMap((t) => t.slots[0]?.runes ?? []).map((r) => [r.id, r]));
   const friendUsers = theirs.length ? await prisma.user.findMany({ where: { id: { in: [...new Set(theirs.map((g) => g.userId))] } }, select: { id: true, displayName: true } }) : [];
   const keys = ["Q", "W", "E", "R"];
-  const meta = await metaBuild(Number(base.key), sp.role).catch(() => null);
+  const mode = (["RANKED", "ARAM", "ARENA"] as const).find((m) => m === sp.mode) ?? "RANKED";
+  const meta = await metaBuild(Number(base.key), mode === "RANKED" ? sp.role : "ANY", undefined, mode).catch(() => null);
+  const [spells, leaders] = await Promise.all([ddSummonerSpells().catch(() => ({}) as Record<string, { name: string; image: string }>), championLeaders(Number(base.key), { take: 10 }).catch(() => [])]);
   const metaItems = meta ? meta.items.filter((i) => isFinishedItem(items[String(i.itemId)])).slice(0, 8) : [];
   const runeById = new Map(runes.flatMap((t) => [{ id: t.id, name: t.name, icon: t.icon }, ...t.slots.flatMap((sl) => sl.runes.map((r) => ({ id: r.id, name: r.name, icon: r.icon })))]).map((r) => [r.id, r]));
 
@@ -57,7 +59,47 @@ export default async function ChampionPage({ params, searchParams }: { params: P
 
       {meta && (
         <section className="card-glow space-y-4" data-testid="champion-meta">
-          <SectionHeader icon="flame" title={`Méta · ${ROLE_FR[meta.role] ?? meta.role}`} sub={`Patch ${meta.patch} · ${meta.games.toLocaleString("fr-FR")} parties classées collectées · ${String(meta.winrate).replace(".", ",")} % de victoires`} />
+          <SectionHeader icon="flame" title={`Méta · ${mode === "RANKED" ? ROLE_FR[meta.role] ?? meta.role : mode}`} sub={`Patch ${meta.patch.split("@")[0]} · ${meta.games.toLocaleString("fr-FR")} parties classées collectées · ${String(meta.winrate).replace(".", ",")} % de victoires`} />
+          <nav aria-label="Mode" className="flex flex-wrap gap-1.5 text-xs">
+            {([["RANKED", "Classée"], ["ARAM", "ARAM"], ["ARENA", "Arena"]] as const).map(([k, l]) => (
+              <Link key={k} href={`/app/champions/${c.id}?mode=${k}`} className={`rounded-full border px-3 py-1 ${mode === k ? "border-magenta bg-magenta/20 text-white" : "border-line text-muted"}`}>{l}</Link>
+            ))}
+          </nav>
+          {(meta.spells.length > 0 || meta.skills.length > 0 || meta.core.length > 0) && (
+            <div className="grid gap-4 md:grid-cols-3" data-testid="champion-meta-choices">
+              {meta.spells[0] && (
+                <div>
+                  <p className="label">Sorts d&apos;invocateur</p>
+                  <div className="flex items-center gap-1.5">
+                    {meta.spells[0].key.split(",").map((k) => (spells[k] ? <img key={k} src={img.spell(v, spells[k]!.image)} alt={spells[k]!.name} title={spells[k]!.name} width={34} height={34} className="rounded-lg border border-line" loading="lazy" /> : <span key={k} className="badge border-line text-muted">{k}</span>))}
+                    <span className="ml-1 text-xs text-muted">{meta.spells[0].key.split(",").map((k) => spells[k]?.name ?? k).join(" + ")} · {meta.spells[0].pickrate} %</span>
+                  </div>
+                </div>
+              )}
+              {meta.skills[0] && (
+                <div>
+                  <p className="label">Ordre de montée des sorts</p>
+                  <p className="flex items-center gap-1.5 font-display text-lg font-bold">
+                    {meta.skills[0].key.split(">").map((k, i) => (
+                      <span key={k} className="flex items-center gap-1.5">{i > 0 && <span className="text-muted">›</span>}<span className="grid h-8 w-8 place-items-center rounded-lg border border-accent/50 bg-accent/15 text-accent-2">{k}</span></span>
+                    ))}
+                  </p>
+                  <p className="text-xs text-muted">Sort monté en premier à gauche · {meta.skills[0].pickrate} % des parties · R dès que possible</p>
+                </div>
+              )}
+              {meta.core[0] && (
+                <div>
+                  <p className="label">Ordre des objets (3 premiers)</p>
+                  <div className="flex items-center gap-1">
+                    {meta.core[0].key.split(">").map((id, i) => (
+                      <span key={id} className="flex items-center gap-1">{i > 0 && <span className="text-muted">›</span>}<ItemIcon version={v} id={Number(id)} name={items[id]?.name ?? `Objet ${id}`} size={34} /></span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted">{meta.core[0].key.split(">").map((id) => items[id]?.name ?? id).join(" › ")} · {String(meta.core[0].winrate).replace(".", ",")} % de victoires</p>
+                </div>
+              )}
+            </div>
+          )}
           {meta.roles.length > 1 && (
             <nav aria-label="Rôle" className="flex flex-wrap gap-1.5 text-xs">
               {meta.roles.map((r) => (
@@ -112,6 +154,22 @@ export default async function ChampionPage({ params, searchParams }: { params: P
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {leaders.length > 0 && (
+        <section className="card" data-testid="champion-leaders">
+          <SectionHeader icon="trophy" title={`Meilleurs joueurs de ${c.name}`} sub="Parties classées collectées · au moins 5 parties · classement ajusté au nombre de parties" />
+          <ol className="grid gap-1.5 sm:grid-cols-2">
+            {leaders.map((l, i) => (
+              <li key={l.puuid} className="flex items-center gap-2.5 rounded-xl border border-line/60 bg-bg/40 px-3 py-1.5 text-sm">
+                <span className={`w-5 font-display font-bold ${i < 3 ? "text-gold" : "text-muted"}`}>{i + 1}</span>
+                <Link className="min-w-0 flex-1 truncate font-medium hover:text-accent-2" href={l.riotId ? `/app/players?q=${encodeURIComponent(l.riotId)}&platform=${l.platform}` : `/app/players?puuid=${encodeURIComponent(l.puuid)}&platform=${l.platform}`}>{l.riotId ?? "Joueur"}</Link>
+                <span className="text-[11px] text-muted">{l.platform}</span>
+                <Winrate wr={Math.round(l.winrate)} games={l.games} />
+              </li>
+            ))}
+          </ol>
         </section>
       )}
 

@@ -30,6 +30,21 @@ clé « Production » : même code, beaucoup plus vite (`META_CRAWL_MATCHES_PER_
 passe pas devant un champion solide), petit bonus de popularité, seuil minimum (20 parties et 0,3 % du patch).
 Paliers par centile : S+ 5 %, S 15 %, A 35 %, B 65 %, C 85 %, D.
 
+### Builds complets, modes, meilleurs joueurs, patchs
+
+- **Builds** : sorts d'invocateur, **ordre de montée des sorts** (sort monté à 5 points en premier, via la timeline),
+  **ordre des 3 premiers objets finis**, page de runes complète, objets les plus construits, fort / faible contre.
+- **Modes** : `META_CRAWL_MODES="RANKED,ARAM,ARENA"` ; ARAM et Arena sans rôle ; Arena : victoire = top 4.
+  Onglets Classée / ARAM / Arena sur la tier list et les fiches champion.
+- **Meilleurs joueurs d'un champion** : joueurs des parties classées collectées (≥ 5 parties), classement ajusté au
+  nombre de parties (données publiques de Riot : Riot ID, parties, victoires).
+- **Notifications de patch** : chaque heure, la version du jeu est vérifiée ; à un nouveau patch, chaque joueur reçoit
+  les changements chiffrés (statistiques de base, récupérations, coûts, portées) de ses champions préférés et des 3 plus
+  joués sur 60 jours, comparés entre les données officielles des deux versions. Les textes ne sont pas analysés.
+- **Application PC** : au verrouillage, le message rappelle l'ordre de montée des sorts ; l'ensemble d'objets suit
+  l'ordre d'achat ; au début de la partie, l'interface locale affiche l'écran de chargement (10 joueurs, rang,
+  victoires, maîtrise). **Pas de bannissement, de choix ni de verrouillage automatiques** (actions du joueur).
+
 ## Honnêteté des chiffres
 
 - Tout est calculé sur des **parties réelles** ; le nombre de parties accompagne chaque pourcentage, grisé sous 3 parties.

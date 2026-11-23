@@ -38,3 +38,43 @@ describe("statistiques méta", () => {
     expect(t.map((r) => r.tier)).toEqual(["S+", "A", "C"]); // paliers par centile (0 %, 33 %, 67 %)
   });
 });
+
+describe("méta : sorts, ordre des sorts et des objets, modes", async () => {
+  const { skillOrder, timelineChoices, metaPatchKey, modeOfPatchKey } = await import("@/lib/riot/meta");
+  const { fakeTimeline } = await import("../fixtures/metaMatch");
+  const { championChanges } = await import("@/lib/riot/patchDiff");
+  it("ordre de montée : sort monté à 5 en premier ; partie trop courte = inconnu", () => {
+    expect(skillOrder([1, 3, 2, 1, 1, 4, 1, 3, 1, 4, 3, 3, 2, 3, 2])).toBe("Q>E>W");
+    expect(skillOrder([1, 2, 3, 1])).toBeNull();
+  });
+  it("timeline : ordre des sorts et 3 premiers objets finis dans l'ordre d'achat", () => {
+    const m = fakeRanked("EUW1_7", true);
+    const c = timelineChoices(fakeTimeline(m) as never, m, "RANKED", (id) => id >= 3000);
+    expect(c.filter((x) => x.championId === 1)).toEqual([
+      { championId: 1, role: "TOP", kind: "skills", key: "Q>E>W", win: true },
+      { championId: 1, role: "TOP", kind: "core", key: "3089>3020>3157", win: true },
+    ]);
+  });
+  it("sorts d'invocateur et joueurs (classée) ; ARAM sans rôle ni matchup ; Arena : victoire = top 4", () => {
+    const r = metaRows(fakeRanked("EUW1_8", true))!;
+    expect(r.choices[0]).toEqual({ championId: 1, role: "TOP", kind: "spells", key: "4,14", win: true });
+    expect(r.players[0]).toEqual({ puuid: "p0", riotId: "Joueur0#EUW", championId: 1, win: true });
+    const aram = metaRows({ ...fakeRanked("EUW1_9", true), info: { ...fakeRanked("EUW1_9", true).info, queueId: 450 } }, "ARAM")!;
+    expect(aram.patch).toBe("15.20@ARAM");
+    expect(aram.champs[0]!.role).toBe("ANY");
+    expect(aram.matchups).toEqual([]);
+    expect(aram.players).toEqual([]);
+    const base = fakeRanked("EUW1_10", true);
+    const arena = { ...base, info: { ...base.info, queueId: 1700, participants: Array.from({ length: 16 }, (_, i) => ({ ...base.info.participants[i % 10]!, championId: 100 + i, teamPosition: "", placement: Math.floor(i / 2) + 1, win: i < 2 })) } };
+    const ar = metaRows(arena, "ARENA")!;
+    expect(ar.champs.filter((c) => c.win)).toHaveLength(8); // places 1 à 4 = 8 joueurs
+    expect(metaPatchKey("15.20", "ARENA")).toBe("15.20@ARENA");
+    expect(modeOfPatchKey("15.20@ARAM")).toBe("ARAM");
+  });
+  it("patch : changements chiffrés des statistiques et des sorts", () => {
+    const before = { name: "Ahri", stats: { hp: 590, armor: 21 }, spells: [{ name: "Orbe", cooldownBurn: "7", costBurn: "55/65", rangeBurn: "970" }] };
+    const after = { name: "Ahri", stats: { hp: 610, armor: 21 }, spells: [{ name: "Orbe", cooldownBurn: "6", costBurn: "55/65", rangeBurn: "970" }] };
+    expect(championChanges(before, after)).toEqual(["PV de base : 590 → 610", "Q (Orbe) : récupération 7 → 6 s"]);
+    expect(championChanges(before, before)).toEqual([]);
+  });
+});

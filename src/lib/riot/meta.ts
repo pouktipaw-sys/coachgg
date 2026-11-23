@@ -1,6 +1,14 @@
 // Statistiques « méta » (fonctions pures, testées) : une partie classée → incréments par patch/champion/rôle,
 // puis tier list (taux de victoire ajusté à la taille de l'échantillon, taux de sélection et de bannissement).
-import type { RiotMatch } from "@/server/riot/client";
+import type { RiotMatch, RiotTimeline } from "@/server/riot/client";
+
+/** Modes collectés : classée solo/duo (par rôle), ARAM et Arena (sans rôle : « ANY »). */
+export const META_MODES = { RANKED: 420, ARAM: 450, ARENA: 1700 } as const;
+export type MetaMode = keyof typeof META_MODES;
+/** Clé de stockage d'un patch pour un mode : « 15.20 » (classée), « 15.20@ARAM », « 15.20@ARENA ». */
+export const metaPatchKey = (patch: string, mode: MetaMode) => (mode === "RANKED" ? patch : `${patch}@${mode}`);
+export const modeOfPatchKey = (key: string): MetaMode => (key.endsWith("@ARAM") ? "ARAM" : key.endsWith("@ARENA") ? "ARENA" : "RANKED");
+export const patchOfKey = (key: string) => key.split("@")[0]!;
 
 /** « 15.20.512.3456 » → « 15.20 ». */
 export const patchOf = (gameVersion: string) => gameVersion.split(".").slice(0, 2).join(".");
@@ -14,6 +22,8 @@ export type MetaRows = {
   items: { championId: number; role: string; itemId: number; win: boolean }[];
   runes: { championId: number; role: string; pageKey: string; win: boolean }[];
   matchups: { championId: number; role: string; opponentId: number; win: boolean }[];
+  choices: { championId: number; role: string; kind: "spells" | "skills" | "core"; key: string; win: boolean }[];
+  players: { puuid: string; riotId: string | null; championId: number; win: boolean }[];
 };
 
 /** Page de runes complète, sous forme de clé : « principal|secondaire|6 runes|3 fragments ». */
@@ -30,26 +40,80 @@ export function parseRunePageKey(key: string) {
   return { primaryStyleId: Number(primary), subStyleId: Number(sub), selectedPerkIds: [...sel!.split(","), ...shards!.split(",")].map(Number) };
 }
 
-/** Une partie classée Faille (5 contre 5, rôles connus) → lignes à additionner. null si inutilisable. */
-export function metaRows(m: RiotMatch): MetaRows | null {
+/**
+ * Une partie → lignes à additionner, ou null si inutilisable.
+ * Classée : 10 joueurs aux rôles connus, ≥ 15 min. ARAM : 10 joueurs, ≥ 10 min. Arena : 16 joueurs, victoire = top 4.
+ */
+export function metaRows(m: RiotMatch, mode: MetaMode = "RANKED"): MetaRows | null {
   const ps = m.info.participants;
-  if (ps.length !== 10 || !ps.every((p) => p.championId && p.teamPosition && ROLES.has(p.teamPosition))) return null;
-  // Partie écourtée (abandon avant 15 min) : statistiques faussées, ignorée.
+  const ranked = mode === "RANKED";
+  if (mode === "ARENA" ? ps.length < 16 : ps.length !== 10) return null;
+  if (!ps.every((p) => p.championId && (!ranked || (p.teamPosition && ROLES.has(p.teamPosition))))) return null;
   const durationSec = m.info.gameEndTimestamp ? m.info.gameDuration : Math.round(m.info.gameDuration / 1000);
-  if (durationSec < 15 * 60) return null;
-  const rows: MetaRows = { patch: patchOf(m.info.gameVersion), champs: [], bans: [], items: [], runes: [], matchups: [] };
+  if (durationSec < (ranked ? 15 : mode === "ARAM" ? 10 : 5) * 60) return null; // abandon : statistiques faussées
+  const rows: MetaRows = { patch: metaPatchKey(patchOf(m.info.gameVersion), mode), champs: [], bans: [], items: [], runes: [], matchups: [], choices: [], players: [] };
   for (const p of ps) {
-    const role = p.teamPosition!;
-    const base = { championId: p.championId!, role, win: p.win };
+    const role = ranked ? p.teamPosition! : "ANY";
+    const win = mode === "ARENA" && p.placement != null ? p.placement <= 4 : p.win;
+    const base = { championId: p.championId!, role, win };
     rows.champs.push(base);
     for (const it of new Set([p.item0, p.item1, p.item2, p.item3, p.item4, p.item5].filter((x): x is number => !!x))) rows.items.push({ ...base, itemId: it });
     const key = p.perks ? runePageKey(p.perks) : null;
     if (key) rows.runes.push({ ...base, pageKey: key });
-    const opp = ps.find((o) => o.teamId !== p.teamId && o.teamPosition === role);
-    if (opp?.championId) rows.matchups.push({ ...base, opponentId: opp.championId });
+    if (ranked) {
+      const opp = ps.find((o) => o.teamId !== p.teamId && o.teamPosition === role);
+      if (opp?.championId) rows.matchups.push({ ...base, opponentId: opp.championId });
+    }
+    if (p.summoner1Id && p.summoner2Id) rows.choices.push({ ...base, kind: "spells", key: [p.summoner1Id, p.summoner2Id].sort((a, b) => a - b).join(",") });
+    if (ranked && p.puuid) rows.players.push({ puuid: p.puuid, riotId: p.riotIdGameName && p.riotIdTagline ? `${p.riotIdGameName}#${p.riotIdTagline}` : null, championId: p.championId!, win });
   }
   rows.bans = [...new Set((m.info.teams ?? []).flatMap((t) => (t.bans ?? []).map((b) => b.championId)).filter((id) => id > 0))];
   return rows;
+}
+
+const SKILL = ["", "Q", "W", "E", "R"];
+
+/** Priorité de montée des sorts : ordre dans lequel Q, W et E atteignent 5 points (sinon le plus monté). « Q>E>W ». */
+export function skillOrder(slots: number[]): string | null {
+  const count: Record<string, number> = { Q: 0, W: 0, E: 0 };
+  const maxedAt: Record<string, number> = {};
+  slots.forEach((slot, i) => {
+    const k = SKILL[slot];
+    if (!k || k === "R") return;
+    count[k]!++;
+    if (count[k] === 5 && maxedAt[k] == null) maxedAt[k] = i;
+  });
+  if (count.Q! + count.W! + count.E! < 9) return null; // partie trop courte pour juger
+  return ["Q", "W", "E"]
+    .sort((a, b) => (maxedAt[a] ?? 99) - (maxedAt[b] ?? 99) || count[b]! - count[a]!)
+    .join(">");
+}
+
+/**
+ * Choix tirés de la timeline (une requête de plus par partie) : ordre de montée des sorts et
+ * trois premiers objets finis dans l'ordre d'achat. `finished` dit si un objet est fini.
+ */
+export function timelineChoices(tl: RiotTimeline, m: RiotMatch, mode: MetaMode, finished: (itemId: number) => boolean): MetaRows["choices"] {
+  const out: MetaRows["choices"] = [];
+  const events = tl.info.frames.flatMap((f) => f.events).sort((a, b) => a.timestamp - b.timestamp);
+  m.info.participants.forEach((p, i) => {
+    const pid = i + 1;
+    if (!p.championId) return;
+    const role = mode === "RANKED" ? p.teamPosition || "" : "ANY";
+    if (!role) return;
+    const win = mode === "ARENA" && p.placement != null ? p.placement <= 4 : p.win;
+    const slots = events.filter((e) => e.type === "SKILL_LEVEL_UP" && e.participantId === pid && e.levelUpType !== "EVOLVE").map((e) => e.skillSlot ?? 0);
+    const so = skillOrder(slots);
+    if (so) out.push({ championId: p.championId, role, kind: "skills", key: so, win });
+    const core: number[] = [];
+    for (const e of events) {
+      if (e.type !== "ITEM_PURCHASED" || e.participantId !== pid || !e.itemId || !finished(e.itemId) || core.includes(e.itemId)) continue;
+      core.push(e.itemId);
+      if (core.length === 3) break;
+    }
+    if (core.length === 3) out.push({ championId: p.championId, role, kind: "core", key: core.join(">"), win });
+  });
+  return out;
 }
 
 export type TierRow = { championId: number; role: string; games: number; wins: number; winrate: number; pickrate: number; banrate: number; score: number; tier: string };

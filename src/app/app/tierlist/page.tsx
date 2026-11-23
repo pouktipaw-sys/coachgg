@@ -14,26 +14,34 @@ const TIER_STYLE: Record<string, string> = { "S+": "border-magenta text-magenta 
 export default async function TierListPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePageUser();
   const sp = await searchParams;
-  const ov = await metaOverview(sp.patch);
-  const role = ROLES.includes(sp.role as (typeof ROLES)[number]) ? sp.role! : "MIDDLE";
+  const mode = (["RANKED", "ARAM", "ARENA"] as const).find((m) => m === sp.mode) ?? "RANKED";
+  const ov = await metaOverview(sp.patch, mode);
+  const role = mode !== "RANKED" ? "ANY" : ROLES.includes(sp.role as (typeof ROLES)[number]) ? sp.role! : "MIDDLE";
   const [v, champs] = await Promise.all([ddVersion().catch(() => null), ddChampions().catch(() => [])]);
-  const tl = ov ? await metaTierList(ov.patch, role) : null;
+  const tl = ov ? await metaTierList(ov.key, role) : null;
+  const MODES = [["RANKED", "Classée solo/duo"], ["ARAM", "ARAM"], ["ARENA", "Arena"]] as const;
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Explorer" title="Tier list" subtitle={ov ? `Patch ${ov.patch} · ${ov.games.toLocaleString("fr-FR")} parties classées solo/duo collectées (ligues Challenger et Grand maître).` : "Classement des champions par rôle, à partir de parties classées publiques."} />
+      <PageHeader eyebrow="Explorer" title="Tier list" subtitle={ov ? `Patch ${ov.patch} · ${ov.games.toLocaleString("fr-FR")} parties ${mode === "RANKED" ? "classées solo/duo" : mode} collectées (joueurs Challenger et Grand maître).` : "Classement des champions par rôle, à partir de parties classées publiques."} />
+      <nav aria-label="Mode" className="flex flex-wrap gap-1.5">
+        {MODES.map(([k, l]) => (
+          <Link key={k} href={`/app/tierlist?mode=${k}`} aria-current={mode === k ? "page" : undefined}
+            className={`rounded-full border px-3 py-1 text-xs ${mode === k ? "border-magenta bg-magenta/20 text-white" : "border-line text-muted hover:text-text"}`}>{l}</Link>
+        ))}
+      </nav>
       {!ov || !tl ? (
         <MetaEmpty />
       ) : (
         <>
           <nav aria-label="Rôle" className="flex flex-wrap gap-1.5">
-            {ROLES.map((r) => (
+            {mode === "RANKED" && ROLES.map((r) => (
               <Link key={r} href={`/app/tierlist?role=${r}${sp.patch ? `&patch=${sp.patch}` : ""}`} aria-current={role === r ? "page" : undefined}
                 className={`rounded-full border px-3 py-1 text-xs ${role === r ? "border-accent bg-accent/20 text-white" : "border-line text-muted hover:text-text"}`}>{ROLE_FR[r]}</Link>
             ))}
             {ov.patches.length > 1 && (
               <span className="ml-auto flex gap-1 text-xs">
                 {ov.patches.slice(0, 4).map((p) => (
-                  <Link key={p.patch} href={`/app/tierlist?role=${role}&patch=${p.patch}`} className={`rounded-full border px-2.5 py-1 ${p.patch === ov.patch ? "border-cyan text-cyan" : "border-line text-muted"}`}>{p.patch}</Link>
+                  <Link key={p.patch} href={`/app/tierlist?mode=${mode}&role=${role}&patch=${p.patch}`} className={`rounded-full border px-2.5 py-1 ${p.patch === ov.patch ? "border-cyan text-cyan" : "border-line text-muted"}`}>{p.patch}</Link>
                 ))}
               </span>
             )}
@@ -54,7 +62,7 @@ export default async function TierListPage({ searchParams }: { searchParams: Pro
                       <tr key={r.championId} className="hover:bg-accent/[0.05]">
                         <td className="px-3 py-2"><span className={`badge font-display font-bold ${TIER_STYLE[r.tier]}`}>{r.tier}</span></td>
                         <td className="px-3 py-2">
-                          <Link href={c ? `/app/champions/${c.id}?role=${role}` : "#"} className="flex items-center gap-2.5 hover:text-accent-2">
+                          <Link href={c ? `/app/champions/${c.id}?role=${role}&mode=${mode}` : "#"} className="flex items-center gap-2.5 hover:text-accent-2">
                             <ChampIcon version={v} file={c?.image.full} name={c?.name ?? `#${r.championId}`} size={32} />
                             <span className="font-medium">{c?.name ?? `#${r.championId}`}</span>
                           </Link>

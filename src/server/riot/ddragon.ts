@@ -34,7 +34,7 @@ async function getJson<T>(path: string): Promise<T> {
 export const ddVersion = () => cached("version", async () => (await getJson<string[]>("/api/versions.json"))[0]!);
 
 export type DdChampion = { id: string; key: string; name: string; title: string; tags: string[]; blurb: string; image: { full: string } };
-export type DdSpell = { id: string; name: string; description: string; cooldownBurn?: string; costBurn?: string; image: { full: string } };
+export type DdSpell = { id: string; name: string; description: string; cooldownBurn?: string; costBurn?: string; rangeBurn?: string; image: { full: string } };
 export type DdChampionDetail = DdChampion & {
   lore: string;
   allytips: string[];
@@ -42,6 +42,7 @@ export type DdChampionDetail = DdChampion & {
   passive: { name: string; description: string; image: { full: string } };
   spells: DdSpell[];
   info: { attack: number; defense: number; magic: number; difficulty: number };
+  stats?: Record<string, number>;
 };
 export type DdItem = { name: string; plaintext?: string; gold: { total: number; purchasable: boolean }; tags: string[]; into?: string[]; from?: string[]; depth?: number; image: { full: string }; maps?: Record<string, boolean> };
 export type DdRuneTree = { id: number; key: string; icon: string; name: string; slots: { runes: { id: number; key: string; icon: string; name: string; shortDesc: string }[] }[] };
@@ -53,10 +54,11 @@ export const ddChampions = () =>
     return Object.values(j.data).sort((a, b) => a.name.localeCompare(b.name, "fr"));
   });
 
-export const ddChampionDetail = (id: string) =>
-  cached(`champion:${id}`, async () => {
+export const ddChampionDetail = (id: string, version?: string) =>
+  cached(`champion:${id}:${version ?? "current"}`, async () => {
     if (!/^[A-Za-z]+$/.test(id)) throw new Error("Champion inconnu.");
-    const v = await ddVersion();
+    if (version && !/^[0-9.]+$/.test(version)) throw new Error("Version inconnue.");
+    const v = version ?? (await ddVersion());
     const j = await getJson<{ data: Record<string, DdChampionDetail> }>(`/cdn/${v}/data/fr_FR/champion/${id}.json`);
     return j.data[id]!;
   });

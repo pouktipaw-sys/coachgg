@@ -71,3 +71,79 @@ describe("statistiques méta", () => {
     await prisma.analysisJob.deleteMany({ where: { type: "META_CRAWL" } });
   });
 });
+
+describe("méta : modes, timeline, meilleurs joueurs, notifications de patch", async () => {
+  const { championLeaders } = await import("@/server/meta");
+  const { fakeTimeline } = await import("../fixtures/metaMatch");
+  const { setDdragonFetcher } = await import("@/server/riot/ddragon");
+  const { checkNewPatch } = await import("@/server/patchNotes");
+  const { makeUser } = await import("./helpers");
+
+  it("collecte classée + ARAM avec timeline : sorts, ordre des sorts et des objets, meilleurs joueurs", async () => {
+    await prisma.$executeRawUnsafe(`TRUNCATE "MetaMatch","MetaPatch","MetaChampionStat","MetaBan","MetaItemStat","MetaRunePage","MetaMatchup","MetaChoice","MetaPlayerChampion"`);
+    setDdragonFetcher(async (url) => {
+      const j = (x: unknown) => new Response(JSON.stringify(x), { status: 200 });
+      if (url.endsWith("versions.json")) return j(["15.20.1"]);
+      if (url.endsWith("/item.json")) return j({ data: Object.fromEntries([1058, 1001, 3089, 3020, 3157].map((id) => [String(id), { name: `Objet ${id}`, gold: { total: id >= 3000 ? 3000 : 400, purchasable: true }, tags: [], image: { full: "" } }])) });
+      return new Response("{}", { status: 404 });
+    });
+    const ranked = Array.from({ length: 12 }, (_, i) => fakeRanked(`EUW1_R${i}`, i % 4 !== 0));
+    const aram = Array.from({ length: 4 }, (_, i) => ({ ...fakeRanked(`EUW1_A${i}`, true), info: { ...fakeRanked(`EUW1_A${i}`, true).info, queueId: 450 } }));
+    const all = [...ranked, ...aram];
+    const client = new RiotClient("k", async (url: string) => {
+      const j = (x: unknown) => new Response(JSON.stringify(x), { status: 200 });
+      if (url.includes("/challengerleagues/")) return j({ entries: [{ puuid: "A", leaguePoints: 1, wins: 1, losses: 1 }] });
+      if (url.includes("/grandmasterleagues/")) return j({ entries: [] });
+      if (url.includes("/ids?")) return j((url.includes("queue=450") ? aram : ranked).map((g) => g.metadata.matchId));
+      const tl = /\/matches\/(EUW1_\w+)\/timeline$/.exec(url);
+      if (tl) return j(fakeTimeline(all.find((g) => g.metadata.matchId === tl[1])!));
+      const m = /\/matches\/(EUW1_\w+)$/.exec(url);
+      if (m) return j(all.find((g) => g.metadata.matchId === m[1])!);
+      return new Response("{}", { status: 404 });
+    });
+    const r = await crawlMeta("EUW1", 100, client, { modes: ["RANKED", "ARAM"], timelines: true });
+    expect(r.byMode).toEqual({ RANKED: 12, ARAM: 4 });
+    const b = (await metaBuild(3))!;
+    expect(b.spells[0]).toMatchObject({ key: "4,14", pickrate: 100 });
+    expect(b.skills[0]).toMatchObject({ key: "Q>E>W", pickrate: 100 });
+    expect(b.core[0]).toMatchObject({ key: "3089>3020>3157" });
+    const ar = (await metaBuild(3, "ANY", undefined, "ARAM"))!;
+    expect(ar).toMatchObject({ role: "ANY", games: 4, patch: "15.20@ARAM" });
+    const leaders = await championLeaders(3);
+    expect(leaders[0]).toMatchObject({ riotId: "Joueur2#EUW", games: 12, platform: "EUW1" }); // ARAM non compté
+    setDdragonFetcher(null);
+  });
+
+  it("nouveau patch : version mémorisée la 1re fois, puis changements chiffrés de SES champions notifiés", async () => {
+    await prisma.appState.deleteMany({ where: { key: "ddragon.version" } });
+    const u = await makeUser("Patch");
+    await prisma.playerProfile.upsert({ where: { userId: u.id }, update: { favoriteChampions: ["Ahri", "Zed"] }, create: { userId: u.id, favoriteChampions: ["Ahri", "Zed"] } });
+    let version = "15.20.1";
+    const detail = (id: string, v: string) => ({ data: { [id]: { id, name: id, stats: { hp: id === "Ahri" && v === "15.21.1" ? 610 : 590 }, spells: [{ name: "Q", cooldownBurn: "7" }] } } });
+    setDdragonFetcher(async (url) => {
+      const j = (x: unknown) => new Response(JSON.stringify(x), { status: 200 });
+      if (url.endsWith("versions.json")) return j([version]);
+      if (url.endsWith("/champion.json")) return j({ data: { Ahri: { id: "Ahri", key: "103", name: "Ahri", title: "", tags: [], blurb: "", image: { full: "" } }, Zed: { id: "Zed", key: "238", name: "Zed", title: "", tags: [], blurb: "", image: { full: "" } } } });
+      const m = /cdn\/([\d.]+)\/data\/fr_FR\/champion\/(\w+)\.json$/.exec(url);
+      if (m) return j(detail(m[2]!, m[1]!));
+      return new Response("{}", { status: 404 });
+    });
+    expect(await checkNewPatch()).toMatchObject({ changed: false, notified: 0 });
+    version = "15.21.1";
+    setDdragonFetcher(async (url) => {
+      const j = (x: unknown) => new Response(JSON.stringify(x), { status: 200 });
+      if (url.endsWith("versions.json")) return j([version]);
+      if (url.endsWith("/champion.json")) return j({ data: { Ahri: { id: "Ahri", key: "103", name: "Ahri", title: "", tags: [], blurb: "", image: { full: "" } }, Zed: { id: "Zed", key: "238", name: "Zed", title: "", tags: [], blurb: "", image: { full: "" } } } });
+      const m = /cdn\/([\d.]+)\/data\/fr_FR\/champion\/(\w+)\.json$/.exec(url);
+      if (m) return j(detail(m[2]!, m[1]!));
+      return new Response("{}", { status: 404 });
+    });
+    const r = await checkNewPatch();
+    expect(r).toMatchObject({ changed: true, version: "15.21.1" });
+    const n = await prisma.notification.findFirstOrThrow({ where: { userId: u.id, type: "patch" } });
+    expect(n.title).toBe("Patch 15.21 : 1 de tes champions changent");
+    expect(n.body).toBe("Ahri : PV de base : 590 → 610");
+    expect(await checkNewPatch()).toMatchObject({ changed: false }); // une seule fois par patch
+    setDdragonFetcher(null);
+  });
+});

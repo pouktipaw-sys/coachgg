@@ -73,7 +73,8 @@ export class ChampSelectAssistant {
       const sid = await lcu.summonerId();
       if (sid && (await lcu.applyItemSet(sid, info.championId, `CoachGG ${b.role} (${b.patch})`, b.items.map((i) => i.itemId)))) done.push("ensemble d'objets");
     }
-    this.message = done.length ? `Importé dans le client : ${done.join(" et ")} (patch ${b.patch}, ${b.games} parties).` : "Import désactivé ou refusé par le client.";
+    const tips = [b.skillOrder ? `monte ${b.skillOrder.replace(/>/g, " › ")}` : null].filter(Boolean).join(" · ");
+    this.message = (done.length ? `Importé dans le client : ${done.join(" et ")} (patch ${b.patch}, ${b.games} parties).` : "Import désactivé ou refusé par le client.") + (tips ? ` Conseil : ${tips}.` : "");
     this.log(this.message);
   }
 }

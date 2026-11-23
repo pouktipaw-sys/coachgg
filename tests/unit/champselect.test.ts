@@ -94,3 +94,15 @@ describe("client LoL : sélection des champions", () => {
     expect(() => setAutostart(true, "x", null)).toThrow(/Windows/);
   });
 });
+
+describe("application PC : écran de chargement", () => {
+  it("au début de la partie, les joueurs sont récupérés et exposés à l'interface locale", async () => {
+    const { Agent } = await import("../../desktop/src/agent");
+    const home = mkdtempSync(path.join(os.tmpdir(), "agent-"));
+    const game = { mode: "CLASSIC", teams: [{ teamId: 100, bans: [], players: [{ riotId: "Moi#EUW", isMe: true, champion: "Ahri", spells: [], rank: null, winrate: null, mastery: null }] }] };
+    const api = { liveGame: async () => ({ account: { gameName: "Moi", tagLine: "EUW" }, game }) } as unknown as CoachApi;
+    const a = new Agent(configSchema.parse({ deviceToken: "t", capture: { backend: "none" } }), { home, api, lcu: () => null, log: () => {} });
+    await a.fetchLoadingScreen();
+    expect(a.status().loadingScreen).toEqual(game);
+  });
+});

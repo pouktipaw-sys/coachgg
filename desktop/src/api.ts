@@ -78,7 +78,7 @@ export class CoachApi {
   }
 
   metaBuild(championId: number, role?: string | null) {
-    return this.call<{ build: { patch: string; role: string; games: number; winrate: number; runes: { primaryStyleId: number; subStyleId: number; selectedPerkIds: number[] } | null; items: { itemId: number; name: string | null }[] } | null }>(
+    return this.call<{ build: { patch: string; role: string; games: number; winrate: number; runes: { primaryStyleId: number; subStyleId: number; selectedPerkIds: number[] } | null; items: { itemId: number; name: string | null }[]; spells?: number[] | null; skillOrder?: string | null } | null }>(
       `/api/meta/build?championId=${championId}${role ? `&role=${role}` : ""}`,
     );
   }
@@ -87,6 +87,11 @@ export class CoachApi {
     return this.call<{ advice: { patch: string; counters: { championId: number; name?: string; winrate: number; games: number }[]; best: { championId: number; name?: string; winrate: number; tier: string }[]; bans: { championId: number; name?: string; winrate: number }[] } | null }>(
       `/api/meta/draft?role=${role}${enemy ? `&enemy=${enemy}` : ""}${taken.length ? `&taken=${taken.join(",")}` : ""}`,
     );
+  }
+
+  /** Partie en cours du compte Riot principal (écran de chargement). */
+  liveGame() {
+    return this.call<{ account: { gameName: string; tagLine: string }; game: null | { mode: string; teams: { teamId: number; bans: string[]; players: { riotId: string | null; isMe: boolean; champion: string; spells: { name: string }[]; rank: { tier: string; division: string; lp: number; wins: number; losses: number } | null; winrate: number | null; mastery: { level: number; points: number } | null }[] }[] } }>("/api/live");
   }
 
   liveEvents(id: string, activePlayer: string, events: LiveEvent[]) {

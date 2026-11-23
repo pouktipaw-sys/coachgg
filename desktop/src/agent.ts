@@ -58,6 +58,8 @@ export class Agent {
     );
   }
   readonly champSelect: ChampSelectAssistant;
+  /** Écran de chargement : les 10 joueurs de la partie (rang, taux de victoire, maîtrise), récupérés au début de la partie. */
+  loadingScreen: Awaited<ReturnType<CoachApi["liveGame"]>>["game"] = null;
   private api: CoachApi;
   private markerPath: string;
 
@@ -75,6 +77,7 @@ export class Agent {
       captureBackend: this.backend,
       appVersion: AGENT_VERSION,
       champSelect: this.champSelect.snapshot(),
+      loadingScreen: this.loadingScreen,
     };
   }
 
@@ -126,10 +129,22 @@ export class Agent {
     this.current = { file, startedAt, gameTimeAtStartSec: gameTimeSec, handle };
     writeFileSync(this.markerPath, JSON.stringify({ file, startedAt, gameTimeAtStartSec: gameTimeSec }));
     this.setState("recording", `Enregistrement en cours (fenêtre du jeu uniquement, sans micro ni webcam).`);
+    // Écran de chargement : informations publiques des 10 joueurs (affichées dans l'interface locale, jamais sur le jeu).
+    if (this.cfg.deviceToken) void this.fetchLoadingScreen();
     this.log(`partie détectée (horloge ${gameTimeSec.toFixed(1)} s) → ${path.basename(file)}`);
   }
 
+  async fetchLoadingScreen() {
+    try {
+      this.loadingScreen = (await this.api.liveGame()).game;
+      if (this.loadingScreen) this.log("écran de chargement : joueurs de la partie récupérés");
+    } catch {
+      this.loadingScreen = null;
+    }
+  }
+
   private async onGameEnd() {
+    this.loadingScreen = null;
     const cur = this.current;
     if (!cur?.handle) return;
     this.current = null;
