@@ -81,9 +81,9 @@ export class RiotClient {
   }
 
   /** Identifiants de matchs, du plus récent au plus ancien (pagination : start, count ≤ 100). */
-  matchIds(puuid: string, platform: string, count = 10, start = 0) {
+  matchIds(puuid: string, platform: string, count = 10, start = 0, opts: { queue?: number } = {}) {
     return this.get<string[]>(
-      `https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=${Math.max(0, start)}&count=${Math.min(100, Math.max(1, count))}`,
+      `https://${regionalRoute(platform)}.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=${Math.max(0, start)}&count=${Math.min(100, Math.max(1, count))}${opts.queue ? `&queue=${opts.queue}` : ""}`,
     );
   }
 
@@ -224,7 +224,7 @@ export type RiotParticipant = {
   item5?: number;
   item6?: number;
   championId?: number;
-  perks?: { styles: { style: number; selections: { perk: number }[] }[] };
+  perks?: { styles: { style: number; selections: { perk: number }[] }[]; statPerks?: { offense: number; flex: number; defense: number } };
 };
 
 export type RiotMatch = {
@@ -238,6 +238,7 @@ export type RiotMatch = {
     queueId: number;
     platformId: string;
     participants: RiotParticipant[];
+    teams?: { teamId: number; win?: boolean; bans?: { championId: number; pickTurn: number }[] }[];
   };
 };
 

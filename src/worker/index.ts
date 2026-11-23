@@ -11,6 +11,7 @@ import { exportClip, markExportFailed } from "../server/clipExport";
 import { analyzeRecording, autoRequestAnalysis } from "../server/analysis/job";
 import { runRiotSync } from "../server/riot/import";
 import { markRecapFailed, renderRecap } from "../server/recap";
+import { runMetaCrawl, scheduleMetaCrawls } from "../server/meta";
 
 const workerId = `${os.hostname()}:${process.pid}`;
 let stopping = false;
@@ -39,6 +40,9 @@ export async function runJob(job: AnalysisJob) {
         break;
       case "RIOT_SYNC":
         result = await runRiotSync(job);
+        break;
+      case "META_CRAWL":
+        result = await runMetaCrawl(job);
         break;
       default:
         throw new Error(`Type de tâche non pris en charge : ${job.type}`);
@@ -88,6 +92,9 @@ async function main() {
       await purgeExpiredRecordings()
         .then((n) => n && console.log(`[worker] conservation : ${n} vidéo(s) purgée(s)`))
         .catch((e) => console.error("[worker] purge échouée :", e instanceof Error ? e.message : e));
+      await scheduleMetaCrawls()
+        .then((n) => n && console.log(`[worker] statistiques méta : ${n} collecte(s) planifiée(s)`))
+        .catch((e) => console.error("[worker] planification méta échouée :", e instanceof Error ? e.message : e));
       await sendWeeklyReviews()
         .then((n) => n && console.log(`[worker] bilans hebdomadaires : ${n} notification(s)`))
         .catch((e) => console.error("[worker] bilans hebdomadaires échoués :", e instanceof Error ? e.message : e));

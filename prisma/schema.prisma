@@ -432,6 +432,7 @@ enum JobType {
   COMPUTE_SCORES
   RIOT_SYNC // import de l'historique Riot (complet ou incrémental)
   RENDER_RECAP // vidéo récap d'une partie analysée
+  META_CRAWL // collecte de parties classées publiques pour les statistiques « méta »
 }
 
 enum JobStatus {
@@ -957,4 +958,72 @@ model RiotMatchCache {
   riotMatchId String   @id
   data        Json
   fetchedAt   DateTime @default(now())
+}
+
+// ───────────── Statistiques « méta » (parties classées publiques collectées) ─────────────
+// Uniquement des agrégats par patch/champion/rôle : aucune donnée de compte n'est conservée.
+
+model MetaMatch {
+  riotMatchId String   @id
+  platform    String
+  patch       String
+  processedAt DateTime @default(now())
+
+  @@index([patch])
+}
+
+model MetaPatch {
+  patch String @id
+  games Int    @default(0)
+}
+
+model MetaChampionStat {
+  patch      String
+  championId Int
+  role       String
+  games      Int    @default(0)
+  wins       Int    @default(0)
+
+  @@id([patch, championId, role])
+}
+
+model MetaBan {
+  patch      String
+  championId Int
+  bans       Int    @default(0)
+
+  @@id([patch, championId])
+}
+
+model MetaItemStat {
+  patch      String
+  championId Int
+  role       String
+  itemId     Int
+  games      Int    @default(0)
+  wins       Int    @default(0)
+
+  @@id([patch, championId, role, itemId])
+}
+
+model MetaRunePage {
+  patch      String
+  championId Int
+  role       String
+  pageKey    String // "style principal|style secondaire|6 runes|3 fragments"
+  games      Int    @default(0)
+  wins       Int    @default(0)
+
+  @@id([patch, championId, role, pageKey])
+}
+
+model MetaMatchup {
+  patch      String
+  championId Int
+  role       String
+  opponentId Int
+  games      Int    @default(0)
+  wins       Int    @default(0)
+
+  @@id([patch, championId, role, opponentId])
 }

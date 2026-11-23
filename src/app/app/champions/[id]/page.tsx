@@ -2,7 +2,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState, PageHeader, ProgressBar, SectionHeader, StatTile } from "@/components/ui";
-import { ChampIcon, ItemIcon, Winrate } from "@/components/explore/Bits";
+import { ChampIcon, ItemIcon, ROLE_FR, Winrate } from "@/components/explore/Bits";
+import { metaBuild } from "@/server/meta";
+import { parseRunePageKey } from "@/lib/riot/meta";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
 import { ddChampionDetail, ddChampions, ddItems, ddRunes, ddText, ddVersion, findChampion, img, isFinishedItem, normChamp } from "@/server/riot/ddragon";
@@ -15,9 +17,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: (await params).id };
 }
 
-export default async function ChampionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ChampionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requirePageUser();
   const { id } = await params;
+  const sp = await searchParams;
   const [v, champs] = await Promise.all([ddVersion().catch(() => null), ddChampions().catch(() => null)]);
   if (!v || !champs) return <EmptyState icon="rank" title="Données du jeu indisponibles" text="Impossible de joindre le serveur de données de Riot pour l'instant." />;
   const base = champs.find((c) => c.id === id);
@@ -33,6 +36,9 @@ export default async function ChampionPage({ params }: { params: Promise<{ id: s
   const keystone = new Map(runes.flatMap((t) => t.slots[0]?.runes ?? []).map((r) => [r.id, r]));
   const friendUsers = theirs.length ? await prisma.user.findMany({ where: { id: { in: [...new Set(theirs.map((g) => g.userId))] } }, select: { id: true, displayName: true } }) : [];
   const keys = ["Q", "W", "E", "R"];
+  const meta = await metaBuild(Number(base.key), sp.role).catch(() => null);
+  const metaItems = meta ? meta.items.filter((i) => isFinishedItem(items[String(i.itemId)])).slice(0, 8) : [];
+  const runeById = new Map(runes.flatMap((t) => [{ id: t.id, name: t.name, icon: t.icon }, ...t.slots.flatMap((sl) => sl.runes.map((r) => ({ id: r.id, name: r.name, icon: r.icon })))]).map((r) => [r.id, r]));
 
   return (
     <div className="space-y-6">
@@ -48,6 +54,66 @@ export default async function ChampionPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </section>
+
+      {meta && (
+        <section className="card-glow space-y-4" data-testid="champion-meta">
+          <SectionHeader icon="flame" title={`Méta · ${ROLE_FR[meta.role] ?? meta.role}`} sub={`Patch ${meta.patch} · ${meta.games.toLocaleString("fr-FR")} parties classées collectées · ${String(meta.winrate).replace(".", ",")} % de victoires`} />
+          {meta.roles.length > 1 && (
+            <nav aria-label="Rôle" className="flex flex-wrap gap-1.5 text-xs">
+              {meta.roles.map((r) => (
+                <Link key={r.role} href={`/app/champions/${c.id}?role=${r.role}`} className={`rounded-full border px-3 py-1 ${r.role === meta.role ? "border-accent bg-accent/20 text-white" : "border-line text-muted"}`}>{ROLE_FR[r.role] ?? r.role} ({r.games})</Link>
+              ))}
+            </nav>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <p className="label">Objets les plus construits</p>
+              <ul className="grid gap-1.5 sm:grid-cols-2">
+                {metaItems.map((b) => (
+                  <li key={b.itemId} className="flex items-center gap-2 rounded-xl border border-line/60 bg-bg/40 px-2 py-1.5 text-xs">
+                    <ItemIcon version={v} id={b.itemId} name={items[String(b.itemId)]?.name ?? `Objet ${b.itemId}`} size={26} />
+                    <span className="min-w-0 flex-1 truncate">{items[String(b.itemId)]?.name ?? `Objet ${b.itemId}`}</span>
+                    <span className="text-muted">{b.pickrate} %</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="label">Page de runes la plus jouée</p>
+              {meta.runes[0] ? (() => {
+                const page = parseRunePageKey(meta.runes[0]!.pageKey);
+                return (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {page.selectedPerkIds.slice(0, 6).map((pid, i) => {
+                        const r = runeById.get(pid);
+                        return r ? <img key={i} src={img.rune(r.icon)} alt={r.name} title={r.name} width={i === 0 ? 40 : 28} height={i === 0 ? 40 : 28} className={i === 0 ? "rounded-full ring-2 ring-gold/70" : "rounded-full"} loading="lazy" /> : <span key={i} className="badge border-line text-muted">{pid}</span>;
+                      })}
+                    </div>
+                    <p className="text-xs text-muted">{runeById.get(page.primaryStyleId)?.name ?? ""} + {runeById.get(page.subStyleId)?.name ?? ""} · choisie dans {meta.runes[0]!.pickrate} % des parties · {String(meta.runes[0]!.winrate).replace(".", ",")} % de victoires</p>
+                    <p className="text-[11px] text-muted">L&apos;application PC CoachGG peut l&apos;importer dans le client pendant la sélection des champions.</p>
+                  </div>
+                );
+              })() : <p className="text-sm text-muted">Pas assez de données.</p>}
+            </div>
+          </div>
+          {(meta.strongAgainst.length > 0 || meta.weakAgainst.length > 0) && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([["Fort contre", meta.strongAgainst], ["Faible contre", meta.weakAgainst]] as const).map(([t, list]) => (
+                <div key={t}>
+                  <p className="label">{t}</p>
+                  <ul className="space-y-1 text-sm">
+                    {list.map((m) => {
+                      const o = findChampion(champs, m.opponentId);
+                      return <li key={m.opponentId} className="flex items-center gap-2"><ChampIcon version={v} file={o?.image.full} name={o?.name ?? `#${m.opponentId}`} size={24} /><span className="flex-1">{o?.name ?? `#${m.opponentId}`}</span><Winrate wr={Math.round(m.winrate)} games={m.games} /></li>;
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="card">
         <SectionHeader icon="bolt" title="Sorts" sub={`Description officielle de Riot · version ${v}`} />
