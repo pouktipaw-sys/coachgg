@@ -42,6 +42,7 @@ export function AppNav({ user, unread, invites, friendRequests = 0, isAdmin }: {
         { href: "/app/players", label: "Recherche joueur", icon: "friends" },
         { href: "/app/live", label: "Partie en cours", icon: "target" },
         { href: "/app/champions", label: "Champions", icon: "rank" },
+        { href: "/app/leaderboard", label: "Classement", icon: "trophy" },
       ],
     },
     {

@@ -200,3 +200,63 @@ export async function friendIds(userId: string) {
   const f = await prisma.friendship.findMany({ where: { status: "ACCEPTED", OR: [{ requesterId: userId }, { addresseeId: userId }] }, select: { requesterId: true, addresseeId: true } });
   return f.map((x) => (x.requesterId === userId ? x.addresseeId : x.requesterId));
 }
+
+// ───────────── Classement d'un serveur ─────────────
+
+const TIERS = ["challenger", "grandmaster", "master"] as const;
+export type ApexTier = (typeof TIERS)[number];
+const boardCache = new Map<string, { at: number; value: unknown }>();
+const nameCache = new Map<string, { at: number; name: string | null }>();
+
+/** Riot ID d'un PUUID (cache 24 h). */
+async function riotIdOf(c: RiotClient, puuid: string, plat: string) {
+  const hit = nameCache.get(puuid);
+  if (hit && Date.now() - hit.at < 86_400_000) return hit.name;
+  const a = await c.accountByPuuid(puuid, plat).catch(() => null);
+  const name = a?.gameName && a.tagLine ? `${a.gameName}#${a.tagLine}` : null;
+  nameCache.set(puuid, { at: Date.now(), name });
+  return name;
+}
+
+/**
+ * Classement Challenger / Grand maître / Maître d'un serveur (100 premiers), trié par points de ligue.
+ * Les Riot ID des `named` premiers sont résolus (1 requête chacun, mis en cache) ; les autres restent consultables.
+ */
+export async function leaderboard(platform: string, tierIn: string, queue = "RANKED_SOLO_5x5", opts: { client?: RiotClient; named?: number } = {}) {
+  const plat = checkPlatform(platform);
+  const tier = (TIERS as readonly string[]).includes(tierIn) ? (tierIn as ApexTier) : "challenger";
+  const q = queue === "RANKED_FLEX_SR" ? "RANKED_FLEX_SR" : "RANKED_SOLO_5x5";
+  const key = `${plat}:${tier}:${q}`;
+  const hit = boardCache.get(key);
+  if (hit && Date.now() - hit.at < 10 * 60_000 && !opts.client) return hit.value as Awaited<ReturnType<typeof build>>;
+  const c = client(opts.client);
+  async function build() {
+    const league = await c.apexLeague(tier, q, plat);
+    const sorted = [...league.entries].sort((a, b) => b.leaguePoints - a.leaguePoints || b.wins - a.wins).slice(0, 100);
+    const named = Math.min(sorted.length, opts.named ?? 25);
+    const names = await pool(sorted.slice(0, named), 4, (e) => riotIdOf(c, e.puuid, plat));
+    return {
+      platform: plat, tier, queue: q, total: league.entries.length, fetchedAt: new Date().toISOString(),
+      entries: sorted.map((e, i) => ({
+        position: i + 1, puuid: e.puuid, riotId: i < named ? names[i] ?? null : null, lp: e.leaguePoints, wins: e.wins, losses: e.losses,
+        winrate: e.wins + e.losses ? Math.round((e.wins / (e.wins + e.losses)) * 100) : null, hotStreak: !!e.hotStreak, freshBlood: !!e.freshBlood, veteran: !!e.veteran,
+      })),
+    };
+  }
+  try {
+    const value = await build();
+    if (!opts.client) boardCache.set(key, { at: Date.now(), value });
+    return value;
+  } catch (e) {
+    riotError(e);
+  }
+}
+
+/** Recherche par PUUID (lien depuis le classement) : retrouve le Riot ID puis le profil. */
+export async function lookupByPuuid(puuid: string, platform: string, opts: { page?: number; client?: RiotClient } = {}) {
+  const plat = checkPlatform(platform);
+  const c = client(opts.client);
+  const name = await riotIdOf(c, puuid, plat);
+  if (!name) throw new HttpError(404, "not_found", "Joueur introuvable.");
+  return lookupPlayer(name, plat, opts);
+}

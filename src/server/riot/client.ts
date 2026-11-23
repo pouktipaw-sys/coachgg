@@ -97,6 +97,18 @@ export class RiotClient {
     return this.get<RiotLeagueEntry[]>(`https://${platform.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`);
   }
 
+  /** LEAGUE-V4 : ligue Challenger, Grand maître ou Maître d'un serveur (classement). */
+  apexLeague(tier: "challenger" | "grandmaster" | "master", queue: string, platform: string) {
+    return this.get<{ entries: { puuid: string; leaguePoints: number; wins: number; losses: number; hotStreak?: boolean; veteran?: boolean; freshBlood?: boolean; inactive?: boolean }[] }>(
+      `https://${platform.toLowerCase()}.api.riotgames.com/lol/league/v4/${tier}leagues/by-queue/${encodeURIComponent(queue)}`,
+    );
+  }
+
+  /** ACCOUNT-V1 : Riot ID à partir du PUUID. */
+  accountByPuuid(puuid: string, platform: string) {
+    return this.get<{ puuid: string; gameName?: string; tagLine?: string }>(`https://${accountRoute(platform)}.api.riotgames.com/riot/account/v1/accounts/by-puuid/${encodeURIComponent(puuid)}`);
+  }
+
   /** SPECTATOR-V5 : partie en cours du joueur, ou null s'il n'est pas en partie (404). */
   async activeGame(puuid: string, platform: string): Promise<RiotActiveGame | null> {
     try {

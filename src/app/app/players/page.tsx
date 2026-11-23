@@ -6,7 +6,7 @@ import { prisma } from "@/server/db";
 import { HttpError } from "@/server/errors";
 import { PLATFORMS } from "@/server/riot/client";
 import { ddChampions, ddVersion, findChampion } from "@/server/riot/ddragon";
-import { lookupPlayer } from "@/server/riot/explorer";
+import { lookupByPuuid, lookupPlayer } from "@/server/riot/explorer";
 import { sampleNote } from "@/lib/riot/insights";
 
 export const metadata = { title: "Recherche de joueur" };
@@ -22,9 +22,9 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
   const platform = sp.platform ?? ids[0]?.platform ?? "EUW1";
   let data: Awaited<ReturnType<typeof lookupPlayer>> | null = null;
   let error: string | null = null;
-  if (q) {
+  if (q || sp.puuid) {
     try {
-      data = await lookupPlayer(q, platform, { page: Math.max(0, Number(sp.page) || 0) });
+      data = sp.puuid && !q ? await lookupByPuuid(sp.puuid, platform, { page: Math.max(0, Number(sp.page) || 0) }) : await lookupPlayer(q, platform, { page: Math.max(0, Number(sp.page) || 0) });
     } catch (e) {
       error = e instanceof HttpError ? e.message : "Recherche impossible pour le moment.";
     }
@@ -62,7 +62,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
 
       {error && <p role="alert" className="card border-loss/40 text-sm text-loss">{error}</p>}
 
-      {!q && !error && <EmptyState icon="friends" title="Cherche un joueur" text="Tape son Riot ID (Pseudo#TAG) et choisis son serveur. Pratique pour scouter tes adversaires ou comparer avec tes amis." />}
+      {!q && !sp.puuid && !error && <EmptyState icon="friends" title="Cherche un joueur" text="Tape son Riot ID (Pseudo#TAG) et choisis son serveur. Pratique pour scouter tes adversaires ou comparer avec tes amis." />}
 
       {data && (
         <>
@@ -123,8 +123,8 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
                 ))}
               </ul>
               <div className="mt-3 flex flex-wrap justify-between gap-2 text-sm">
-                {data.page > 0 ? <Link className="btn-ghost" href={`/app/players?q=${encodeURIComponent(q)}&platform=${platform}&page=${data.page - 1}`}>← Plus récentes</Link> : <span />}
-                {data.hasMore && <Link className="btn-ghost" href={`/app/players?q=${encodeURIComponent(q)}&platform=${platform}&page=${data.page + 1}`} data-testid="older-games">Parties plus anciennes →</Link>}
+                {data.page > 0 ? <Link className="btn-ghost" href={`/app/players?q=${encodeURIComponent(`${data.account.gameName}#${data.account.tagLine}`)}&platform=${data.account.platform}&page=${data.page - 1}`}>← Plus récentes</Link> : <span />}
+                {data.hasMore && <Link className="btn-ghost" href={`/app/players?q=${encodeURIComponent(`${data.account.gameName}#${data.account.tagLine}`)}&platform=${data.account.platform}&page=${data.page + 1}`} data-testid="older-games">Parties plus anciennes →</Link>}
               </div>
             </section>
           </div>

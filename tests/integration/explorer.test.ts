@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/server/db";
 import { RiotClient, type RiotMatch } from "@/server/riot/client";
 import { setDdragonFetcher } from "@/server/riot/ddragon";
-import { liveGame, lookupPlayer, userGames } from "@/server/riot/explorer";
+import { leaderboard, liveGame, lookupByPuuid, lookupPlayer, userGames } from "@/server/riot/explorer";
 import { importRecentMatches } from "@/server/riot/import";
 import { makeUser } from "./helpers";
 
@@ -109,5 +109,31 @@ describe("exploration Riot", () => {
     await importRecentMatches(u.id, 1, client);
     const [row] = await userGames([u.id]);
     expect(row).toMatchObject({ championName: "Ahri", opponent: "Zed", keystone: 8112, items: [3089, 3020, 1058], win: true });
+  });
+
+  it("classement : 100 premiers triés par PL, Riot ID des premiers résolus, profil par PUUID", async () => {
+    let accountCalls = 0;
+    const entries = Array.from({ length: 120 }, (_, i) => ({ puuid: `A${i}`, leaguePoints: 1000 + ((i * 37) % 120), wins: 100 + i, losses: 80, hotStreak: i === 5 }));
+    const c = new RiotClient("k", async (url: string) => {
+      const j = (x: unknown, st = 200) => new Response(JSON.stringify(x), { status: st });
+      if (url.includes("/challengerleagues/by-queue/RANKED_SOLO_5x5")) return j({ entries });
+      if (url.includes("/accounts/by-puuid/")) { accountCalls++; const id = url.split("/").pop()!; return j({ puuid: id, gameName: `Pro${id}`, tagLine: "EUW" }); }
+      if (url.includes("/accounts/by-riot-id/")) return j({ puuid: "SCOUT", gameName: "ProA1", tagLine: "EUW" });
+      if (url.includes("/league/v4/entries/")) return j([]);
+      if (url.includes("/ids?")) return j([]);
+      if (url.includes("/top?")) return j([]);
+      return j({}, 404);
+    });
+    const lb = (await leaderboard("EUW1", "challenger", "RANKED_SOLO_5x5", { client: c, named: 10 }))!;
+    expect(lb.total).toBe(120);
+    expect(lb.entries).toHaveLength(100);
+    expect(lb.entries.map((e) => e.lp)).toEqual([...lb.entries.map((e) => e.lp)].sort((a, b) => b - a));
+    expect(lb.entries[0]!.riotId).toMatch(/^ProA\d+#EUW$/);
+    expect(lb.entries[10]!.riotId).toBeNull();
+    expect(accountCalls).toBe(10);
+    await leaderboard("EUW1", "challenger", "RANKED_SOLO_5x5", { client: c, named: 10 });
+    expect(accountCalls).toBe(10); // Riot ID en cache
+    const p = (await lookupByPuuid("A1", "EUW1", { client: c }))!;
+    expect(p.account.gameName).toBe("ProA1");
   });
 });
