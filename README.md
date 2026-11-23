@@ -107,6 +107,7 @@ createdb coachgg_test && createdb coachgg_e2e
 
 ## Documentation
 
+- [docs/EXPLORER.md](docs/EXPLORER.md) — recherche de joueur, partie en cours, champions, stats avancées (API Riot + Data Dragon).
 - [docs/DEPLOY.md](docs/DEPLOY.md) — **mise en ligne gratuite** (Oracle Cloud Always Free) : Docker, HTTPS automatique, mises à jour automatiques depuis GitHub.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — découpage, modèle de données, pipeline, sécurité.
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — variables d'environnement, intégrations externes, déploiement.

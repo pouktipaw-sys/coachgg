@@ -301,6 +301,7 @@ model MatchStatistics {
   controlWardsBought Int?
   objectivesTakedowns Int? // dragons + hérauts + nashors + tours auxquels le joueur a participé (si connu)
   items              Int[] // IDs d'objets finaux (si disponibles)
+  runes              Json? // { keystone, primaryStyle, subStyle } (identifiants Riot) si disponibles
   timeline           Json? // évolution (or/cs par minute) si disponible
 }
 
@@ -945,4 +946,12 @@ model CommunityReport {
 
   @@unique([reporterId, targetType, targetId])
   @@index([resolvedAt])
+}
+
+// Parties Riot d'autres joueurs (recherche de joueur) : réponse MATCH-V5 brute mise en cache, pour ne pas
+// redemander la même partie à Riot (limites de requêtes). Aucune donnée de compte CoachGG.
+model RiotMatchCache {
+  riotMatchId String   @id
+  data        Json
+  fetchedAt   DateTime @default(now())
 }

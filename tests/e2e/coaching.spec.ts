@@ -449,3 +449,28 @@ test("compte CoachGG : changer le mot de passe depuis les paramètres puis se re
   await page.click("form button.btn-primary");
   await page.waitForURL("**/app**");
 });
+
+test("explorer : stats avancées sur des parties saisies ; recherche, partie en cours et champions sans clé Riot", async ({ page }) => {
+  await register(page, "Expl");
+  for (const [champ, win, opp] of [["Ahri", true, "Zed"], ["Ahri", false, "Zed"], ["Zed", true, "Ahri"]] as const) {
+    const r = await page.request.post("/api/matches", {
+      data: {
+        durationSec: 1800, gameMode: "RANKED_SOLO",
+        participants: [
+          { isMe: true, championName: champ, role: "MIDDLE", teamSide: 100, win, kills: 6, deaths: 3, assists: 8, creepScore: 210 },
+          { championName: opp, role: "MIDDLE", teamSide: 200, win: !win, kills: 3, deaths: 6, assists: 2 },
+        ],
+      },
+    });
+    expect(r.status()).toBe(201);
+  }
+  await page.goto("/app/insights");
+  await expect(page.locator("[data-testid=insights-champions]")).toContainText("Ahri");
+  await expect(page.locator("[data-testid=insights-hard]")).toContainText("Zed"); // 2 parties contre Zed, 1 victoire
+  await page.goto("/app/players?q=Faker%23KR1&platform=KR");
+  await expect(page.getByRole("alert")).toContainText("Clé API Riot non configurée");
+  await page.goto("/app/live?q=Faker%23KR1&platform=KR");
+  await expect(page.getByRole("alert")).toContainText("Clé API Riot non configurée");
+  await page.goto("/app/champions");
+  await expect(page.getByRole("heading", { name: "Champions" })).toBeVisible();
+});

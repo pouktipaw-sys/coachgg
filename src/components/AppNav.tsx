@@ -30,9 +30,18 @@ export function AppNav({ user, unread, invites, friendRequests = 0, isAdmin }: {
       items: [
         { href: "/app/matches", label: "Matchs & stats", icon: "stats" },
         { href: "/app/progress", label: "Progression", icon: "progress" },
+        { href: "/app/insights", label: "Stats avancées", icon: "stats" },
         { href: "/app/skills", label: "Rang suivant", icon: "rank" },
         { href: "/app/goals", label: "Objectifs", icon: "goal" },
         { href: "/app/coach", label: "Coach", icon: "coach" },
+      ],
+    },
+    {
+      title: "Explorer",
+      items: [
+        { href: "/app/players", label: "Recherche joueur", icon: "friends" },
+        { href: "/app/live", label: "Partie en cours", icon: "target" },
+        { href: "/app/champions", label: "Champions", icon: "rank" },
       ],
     },
     {

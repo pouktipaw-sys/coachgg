@@ -97,6 +97,31 @@ export class RiotClient {
     return this.get<RiotLeagueEntry[]>(`https://${platform.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`);
   }
 
+  /** SPECTATOR-V5 : partie en cours du joueur, ou null s'il n'est pas en partie (404). */
+  async activeGame(puuid: string, platform: string): Promise<RiotActiveGame | null> {
+    try {
+      return await this.get<RiotActiveGame>(`https://${platform.toLowerCase()}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(puuid)}`);
+    } catch (e) {
+      if (e instanceof RiotApiError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  /** CHAMPION-MASTERY-V4 : maîtrise d'un champion (null si jamais joué). */
+  async championMastery(puuid: string, platform: string, championId: number): Promise<RiotMastery | null> {
+    try {
+      return await this.get<RiotMastery>(`https://${platform.toLowerCase()}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/${encodeURIComponent(puuid)}/by-champion/${championId}`);
+    } catch (e) {
+      if (e instanceof RiotApiError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  /** CHAMPION-MASTERY-V4 : champions les plus joués. */
+  topMasteries(puuid: string, platform: string, count = 5) {
+    return this.get<RiotMastery[]>(`https://${platform.toLowerCase()}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/${encodeURIComponent(puuid)}/top?count=${Math.min(20, Math.max(1, count))}`);
+  }
+
   /** MATCH-V5 timeline : événements horodatés (ms depuis le début de la partie). */
   timeline(matchId: string) {
     const platform = matchId.split("_")[0] ?? "EUW1";
@@ -114,6 +139,19 @@ export type RiotTimeline = {
     }[];
   };
 };
+
+export type RiotActiveGame = {
+  gameId: number;
+  gameMode: string;
+  gameQueueConfigId?: number;
+  gameStartTime: number; // ms epoch (0 pendant le chargement)
+  gameLength: number; // s
+  platformId: string;
+  participants: { puuid: string | null; riotId?: string; championId: number; teamId: number; spell1Id: number; spell2Id: number; perks?: { perkIds: number[]; perkStyle: number; perkSubStyle: number }; bot?: boolean }[];
+  bannedChampions?: { championId: number; teamId: number; pickTurn: number }[];
+};
+
+export type RiotMastery = { championId: number; championLevel: number; championPoints: number; lastPlayTime?: number };
 
 export type RiotLeagueEntry = { queueType: string; tier: string; rank: string; leaguePoints: number; wins: number; losses: number };
 
@@ -173,6 +211,8 @@ export type RiotParticipant = {
   item4?: number;
   item5?: number;
   item6?: number;
+  championId?: number;
+  perks?: { styles: { style: number; selections: { perk: number }[] }[] };
 };
 
 export type RiotMatch = {
@@ -236,7 +276,15 @@ export function convertRiotMatch(m: RiotMatch) {
         wardsKilled: p.wardsKilled ?? null,
         controlWardsBought: p.visionWardsBoughtInGame ?? null,
         items: [p.item0, p.item1, p.item2, p.item3, p.item4, p.item5, p.item6].filter((x): x is number => !!x),
+        runes: runesOf(p) ?? undefined,
       },
     })),
   };
+}
+
+/** Runes d'un participant : rune clé, arbre principal et secondaire (identifiants Riot), ou null. */
+export function runesOf(p: Pick<RiotParticipant, "perks">) {
+  const [primary, secondary] = p.perks?.styles ?? [];
+  const keystone = primary?.selections?.[0]?.perk;
+  return keystone ? { keystone, primaryStyle: primary!.style, subStyle: secondary?.style ?? null } : null;
 }
