@@ -3,7 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState, PageHeader, ProgressBar, SectionHeader, StatTile } from "@/components/ui";
 import { ChampIcon, ItemIcon, ROLE_FR, Winrate } from "@/components/explore/Bits";
-import { championLeaders, metaBuild } from "@/server/meta";
+import { championLeaders, metaBuild, metaSynergies, metaVersus } from "@/server/meta";
+import { META_TIERS } from "@/lib/riot/meta";
+import { PLATFORMS } from "@/server/riot/client";
+import { ChampionInput } from "@/components/ChampionInput";
 import { parseRunePageKey } from "@/lib/riot/meta";
 import { requirePageUser } from "@/server/auth/page";
 import { prisma } from "@/server/db";
@@ -37,7 +40,13 @@ export default async function ChampionPage({ params, searchParams }: { params: P
   const friendUsers = theirs.length ? await prisma.user.findMany({ where: { id: { in: [...new Set(theirs.map((g) => g.userId))] } }, select: { id: true, displayName: true } }) : [];
   const keys = ["Q", "W", "E", "R"];
   const mode = (["RANKED", "ARAM", "ARENA"] as const).find((m) => m === sp.mode) ?? "RANKED";
-  const meta = await metaBuild(Number(base.key), mode === "RANKED" ? sp.role : "ANY", undefined, mode).catch(() => null);
+  const tier = META_TIERS.includes(sp.tier as (typeof META_TIERS)[number]) ? sp.tier! : "ALL";
+  const platform = PLATFORMS.includes(sp.platform as (typeof PLATFORMS)[number]) ? sp.platform! : "ALL";
+  const meta = await metaBuild(Number(base.key), mode === "RANKED" ? sp.role : "ANY", undefined, mode, { tier, platform }).catch(() => null);
+  const vsChamp = sp.vs ? findChampion(champs, sp.vs) : undefined;
+  const [versus, synergies] = meta && mode === "RANKED"
+    ? await Promise.all([vsChamp ? metaVersus(Number(base.key), meta.role, Number(vsChamp.key), meta.patch).catch(() => null) : null, metaSynergies(Number(base.key), meta.role, meta.patch).catch(() => [])])
+    : [null, []];
   const [spells, leaders] = await Promise.all([ddSummonerSpells().catch(() => ({}) as Record<string, { name: string; image: string }>), championLeaders(Number(base.key), { take: 10 }).catch(() => [])]);
   const metaItems = meta ? meta.items.filter((i) => isFinishedItem(items[String(i.itemId)])).slice(0, 8) : [];
   const runeById = new Map(runes.flatMap((t) => [{ id: t.id, name: t.name, icon: t.icon }, ...t.slots.flatMap((sl) => sl.runes.map((r) => ({ id: r.id, name: r.name, icon: r.icon })))]).map((r) => [r.id, r]));
@@ -59,10 +68,10 @@ export default async function ChampionPage({ params, searchParams }: { params: P
 
       {meta && (
         <section className="card-glow space-y-4" data-testid="champion-meta">
-          <SectionHeader icon="flame" title={`Méta · ${mode === "RANKED" ? ROLE_FR[meta.role] ?? meta.role : mode}`} sub={`Patch ${meta.patch.split("@")[0]} · ${meta.games.toLocaleString("fr-FR")} parties classées collectées · ${String(meta.winrate).replace(".", ",")} % de victoires`} />
+          <SectionHeader icon="flame" title={`Méta · ${mode === "RANKED" ? ROLE_FR[meta.role] ?? meta.role : mode}${tier !== "ALL" ? ` · ${tier}` : ""}${platform !== "ALL" ? ` · ${platform}` : ""}`} sub={`Patch ${meta.patch.split(/[@~]/)[0]} · ${meta.games.toLocaleString("fr-FR")} parties classées collectées · ${String(meta.winrate).replace(".", ",")} % de victoires`} />
           <nav aria-label="Mode" className="flex flex-wrap gap-1.5 text-xs">
             {([["RANKED", "Classée"], ["ARAM", "ARAM"], ["ARENA", "Arena"]] as const).map(([k, l]) => (
-              <Link key={k} href={`/app/champions/${c.id}?mode=${k}`} className={`rounded-full border px-3 py-1 ${mode === k ? "border-magenta bg-magenta/20 text-white" : "border-line text-muted"}`}>{l}</Link>
+              <Link key={k} href={`/app/champions/${c.id}?mode=${k}&tier=${tier}&platform=${platform}`} className={`rounded-full border px-3 py-1 ${mode === k ? "border-magenta bg-magenta/20 text-white" : "border-line text-muted"}`}>{l}</Link>
             ))}
           </nav>
           {(meta.spells.length > 0 || meta.skills.length > 0 || meta.core.length > 0) && (
@@ -139,6 +148,54 @@ export default async function ChampionPage({ params, searchParams }: { params: P
               })() : <p className="text-sm text-muted">Pas assez de données.</p>}
             </div>
           </div>
+          {mode === "RANKED" && (
+            <div className="rounded-xl border border-line/70 bg-bg/40 p-3" data-testid="champion-versus">
+              <form className="flex flex-wrap items-end gap-2">
+                <input type="hidden" name="role" value={meta.role} />
+                <input type="hidden" name="tier" value={tier} />
+                <input type="hidden" name="platform" value={platform} />
+                <div className="min-w-48 flex-1">
+                  <label className="label" htmlFor="vs">Build contre un adversaire précis</label>
+                  <ChampionInput id="vs" name="vs" defaultValue={vsChamp?.name ?? ""} placeholder="ex. Zed" aria-label="Adversaire de voie" />
+                </div>
+                <button className="btn-ghost">Voir</button>
+              </form>
+              {vsChamp && (versus ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-3 text-sm">
+                  <p>Contre <b>{vsChamp.name}</b> : <Winrate wr={Math.round(versus.winrate)} games={versus.games} /></p>
+                  {versus.core && (
+                    <div className="flex items-center gap-1">
+                      {versus.core.key.split(">").map((id, i) => <span key={id} className="flex items-center gap-1">{i > 0 && <span className="text-muted">›</span>}<ItemIcon version={v} id={Number(id)} name={items[id]?.name ?? id} size={28} /></span>)}
+                      <span className="ml-1 text-xs text-muted">({versus.core.games})</span>
+                    </div>
+                  )}
+                  {versus.runes && (() => {
+                    const page = parseRunePageKey(versus.runes.key);
+                    const k = runeById.get(page.selectedPerkIds[0]!);
+                    return <p className="flex items-center gap-1.5 text-xs text-muted">{k && <img src={img.rune(k.icon)} alt="" width={26} height={26} />}{k?.name ?? "Runes"} + {runeById.get(page.subStyleId)?.name ?? ""} ({versus.runes.games})</p>;
+                  })()}
+                </div>
+              ) : <p className="mt-2 text-sm text-muted">Pas encore de partie collectée contre {vsChamp.name} à ce rôle.</p>)}
+            </div>
+          )}
+          {synergies.length > 0 && (
+            <div data-testid="champion-synergies">
+              <p className="label">Synergies (meilleurs alliés par rôle, au moins 5 parties)</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {synergies.map((g) => (
+                  <div key={g.role}>
+                    <p className="text-xs text-muted">{ROLE_FR[g.role] ?? g.role}</p>
+                    <ul className="mt-1 space-y-1 text-sm">
+                      {g.best.map((a) => {
+                        const ch = findChampion(champs, a.allyId);
+                        return <li key={a.allyId} className="flex items-center gap-1.5"><ChampIcon version={v} file={ch?.image.full} name={ch?.name ?? `#${a.allyId}`} size={22} /><span className="flex-1 truncate">{ch?.name ?? `#${a.allyId}`}</span><Winrate wr={Math.round(a.winrate)} games={a.games} /></li>;
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {(meta.strongAgainst.length > 0 || meta.weakAgainst.length > 0) && (
             <div className="grid gap-4 sm:grid-cols-2">
               {([["Fort contre", meta.strongAgainst], ["Faible contre", meta.weakAgainst]] as const).map(([t, list]) => (

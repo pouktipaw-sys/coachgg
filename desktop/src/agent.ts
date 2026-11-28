@@ -7,7 +7,7 @@ import path from "node:path";
 import { CoachApi } from "./api";
 import { clipWindows, cutClip, relevantEvents } from "./clips";
 import { AGENT_VERSION, appHome, resolveBackend, storageDir, type AgentConfig } from "./config";
-import { GameWatcher, LiveClientProbe, type GameProbe } from "./liveclient";
+import { GameWatcher, LiveClientProbe, type GameProbe, type MyStats } from "./liveclient";
 import { startRecording, type RecordingHandle } from "./recorder";
 import { availableForRecording, enforceDiskLimit, usedBytes } from "./storage";
 import { UploadQueue } from "./queue";
@@ -42,7 +42,8 @@ export class Agent {
     this.dir = storageDir(cfg, home);
     mkdirSync(this.dir, { recursive: true });
     this.queue = new UploadQueue(path.join(home, "queue.json"));
-    this.watcher = new GameWatcher(opts.probe ?? new LiveClientProbe(cfg.liveClient.url));
+    this.probe = opts.probe ?? new LiveClientProbe(cfg.liveClient.url);
+    this.watcher = new GameWatcher(this.probe);
     this.api = opts.api ?? new CoachApi(cfg.serverUrl, cfg.deviceToken);
     this.log = opts.log ?? ((m) => console.log(`[agent] ${m}`));
     this.markerPath = path.join(home, "current-recording.json");
@@ -60,6 +61,9 @@ export class Agent {
   readonly champSelect: ChampSelectAssistant;
   /** Écran de chargement : les 10 joueurs de la partie (rang, taux de victoire, maîtrise), récupérés au début de la partie. */
   loadingScreen: Awaited<ReturnType<CoachApi["liveGame"]>>["game"] = null;
+  /** Compagnon de partie : tes statistiques en direct (API locale du jeu, lecture seule), pour un 2e écran. */
+  companion: MyStats | null = null;
+  private probe: GameProbe;
   private api: CoachApi;
   private markerPath: string;
 
@@ -78,6 +82,7 @@ export class Agent {
       appVersion: AGENT_VERSION,
       champSelect: this.champSelect.snapshot(),
       loadingScreen: this.loadingScreen,
+      companion: this.companion,
     };
   }
 
@@ -108,6 +113,8 @@ export class Agent {
     // Sélection des champions (avant la partie uniquement) : runes, objets, conseils.
     if (!this.current) await this.champSelect.tick().catch(() => {});
     const ev = await this.watcher.tick();
+    // Pendant la partie : tes stats en direct pour le compagnon (aucune donnée ennemie).
+    this.companion = this.current && this.probe.myStats ? await this.probe.myStats().catch(() => null) : null;
     if (ev?.type === "start") await this.onGameStart(ev.gameTimeSec);
     else if (ev?.type === "end") await this.onGameEnd();
     else if (!this.current && this.state !== "uploading" && this.state !== "processing") this.setState("waiting_game", "En attente d'une partie.");

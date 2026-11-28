@@ -156,3 +156,32 @@ export function DiffChart({ values, label, unit, height = 110 }: { values: numbe
     </figure>
   );
 }
+
+/** Courbe des LP dans le temps (échelle continue Fer → Maître), graduée par rang. Valeurs réelles uniquement. */
+export function LpChart({ points, ticks, height = 160 }: { points: { at: string; value: number; label: string }[]; ticks: { label: string; value: number }[]; height?: number }) {
+  if (points.length < 2) return <p className="text-sm text-muted">Au moins deux relevés de rang sont nécessaires : actualise ton rang après tes prochaines parties classées.</p>;
+  const w = 520;
+  const vals = points.map((p) => p.value);
+  const min = Math.min(...vals) - 50;
+  const max = Math.max(...vals) + 50;
+  const x = (i: number) => 60 + (i / (points.length - 1)) * (w - 70);
+  const y = (v: number) => height - 14 - ((v - min) / (max - min)) * (height - 28);
+  const d = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img" aria-label={`Évolution du rang : ${points.map((p) => p.label).join(", ")}`}>
+      <defs><linearGradient id="lp-line" x1="0" x2="1"><stop offset="0" stopColor="#922eff" /><stop offset="1" stopColor="#59d5ff" /></linearGradient></defs>
+      {ticks.filter((t) => t.value >= min && t.value <= max).map((t) => (
+        <g key={t.label}>
+          <line x1={60} x2={w - 10} y1={y(t.value)} y2={y(t.value)} stroke="#30234b" strokeDasharray="4 4" />
+          <text x={0} y={y(t.value) + 4} fontSize={11} fill="#a7a0bd">{t.label}</text>
+        </g>
+      ))}
+      <path d={d} fill="none" stroke="url(#lp-line)" strokeWidth={2.5} strokeLinejoin="round" />
+      {points.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.value)} r={i === points.length - 1 ? 4.5 : 3} fill={i === points.length - 1 ? "#59d5ff" : "#922eff"} stroke="#080812" strokeWidth={1.5}>
+          <title>{`${new Date(p.at).toLocaleDateString("fr-FR")} : ${p.label}`}</title>
+        </circle>
+      ))}
+    </svg>
+  );
+}

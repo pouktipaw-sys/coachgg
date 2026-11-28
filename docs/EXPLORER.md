@@ -45,6 +45,21 @@ Paliers par centile : S+ 5 %, S 15 %, A 35 %, B 65 %, C 85 %, D.
   l'ordre d'achat ; au début de la partie, l'interface locale affiche l'écran de chargement (10 joueurs, rang,
   victoires, maîtrise). **Pas de bannissement, de choix ni de verrouillage automatiques** (actions du joueur).
 
+### Par rang et par serveur, contres, synergies, LP, volume
+
+- **Seaux** : chaque partie est comptée dans 4 seaux (global, serveur, rang, rang + serveur). Clés `15.20`,
+  `15.20~P:EUW1`, `15.20~T:GOLD`, `15.20~T:GOLD~P:EUW1`. Le rang est celui du joueur par lequel la partie a été trouvée.
+  `META_CRAWL_TIERS="ALL"` collecte de Fer à Challenger (LEAGUE-EXP-V4) ; filtres Rang / Serveur sur la tier list.
+- **Volume** : limiteur partagé qui suit les quotas renvoyés par Riot (`X-App-Rate-Limit`) : la collecte va aussi vite
+  que la clé le permet, sans erreurs 429. `META_CRAWL_MATCHES_PER_RUN` (jusqu'à 100 000) et `META_CRAWL_EVERY_MIN`.
+  Les « millions de parties » demandent une **clé Production** et plusieurs serveurs : le code est prêt, le quota non.
+- **Nouveau patch** : collecte immédiate supplémentaire ; la tier list affiche le patch précédent tant que le nouveau
+  n'a pas 200 parties, avec un bandeau « nouveau patch en cours de collecte ».
+- **Contre un adversaire** : résultat du matchup, page de runes et ordre des objets les plus joués contre ce champion.
+- **Synergies** : par rôle allié, les 3 champions avec qui le champion gagne le plus (≥ 5 parties, taux ajusté).
+- **Suivi des LP** : photo du rang à chaque actualisation où il change ; courbe sur une échelle continue
+  (Fer IV 0 PL = 0, 100 par division, Maître et au-dessus = 2 800 + PL), gain ou perte total.
+
 ## Honnêteté des chiffres
 
 - Tout est calculé sur des **parties réelles** ; le nombre de parties accompagne chaque pourcentage, grisé sous 3 parties.

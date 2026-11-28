@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/ui";
-import { ROLE_LABELS, Sparkline } from "@/components/stats";
+import { LpChart, ROLE_LABELS, Sparkline } from "@/components/stats";
+import { prisma } from "@/server/db";
+import { ladderPoints, ladderTicks, lpDeltas } from "@/lib/riot/ladder";
+import { tierLabel } from "@/components/explore/Bits";
 import { requirePageUser } from "@/server/auth/page";
 import { impactProfile, progressProfile, reviewSummary, weeklyReview } from "@/server/progress";
 import { RadarChart } from "@/components/RadarChart";
@@ -13,7 +16,18 @@ const SHORT: Record<string, string> = { resources: "Farm", participation: "Parti
 
 export default async function ProgressPage() {
   const user = await requirePageUser();
-  const [p, week, impact] = await Promise.all([progressProfile(user.id), weeklyReview(user.id), impactProfile(user.id)]);
+  const [p, week, impact, identity] = await Promise.all([
+    progressProfile(user.id), weeklyReview(user.id), impactProfile(user.id),
+    prisma.gameIdentity.findFirst({ where: { userId: user.id, isPrimary: true }, include: { rankSnapshots: { orderBy: { at: "asc" }, take: 500 } } }),
+  ]);
+  // Suivi des LP : relevés du compte principal, par file (solo/duo, flexible).
+  const lpQueues = ["RANKED_SOLO_5x5", "RANKED_FLEX_SR"].map((q) => {
+    const snaps = (identity?.rankSnapshots ?? []).filter((x) => x.queue === q);
+    const points = snaps.map((x) => ({ at: x.at.toISOString(), value: ladderPoints(x.tier, x.division, x.lp), label: `${tierLabel(x)} · ${x.lp} PL` }));
+    const vals = points.map((x) => x.value);
+    const deltas = lpDeltas(snaps);
+    return { queue: q, label: q === "RANKED_SOLO_5x5" ? "Classée solo/duo" : "Classée flexible", snaps, points, ticks: vals.length ? ladderTicks(Math.min(...vals), Math.max(...vals)) : [], deltas };
+  }).filter((x) => x.snaps.length);
   if (p.total === 0)
     return (
       <div>
@@ -23,11 +37,32 @@ export default async function ProgressPage() {
     );
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader eyebrow="Performance"
         title="Progression"
         subtitle={`${p.total} partie(s) notée(s) · formule ${CURRENT_SCORE_CONFIG.version} (expérimentale) · comparaison à votre propre historique`}
         actions={<Link href="/app/coach" className="btn-ghost">Demander au coach</Link>}
       />
+
+      <section className="card space-y-4" data-testid="lp-tracking">
+        <h2 className="h2">Suivi des LP</h2>
+        {lpQueues.length === 0 ? (
+          <p className="text-sm text-muted">Aucun relevé de rang pour l&apos;instant. Ton rang est relevé à chaque actualisation (Paramètres → Comptes Riot, ou synchronisation de tes parties).</p>
+        ) : (
+          lpQueues.map((q) => {
+            const last = q.snaps.at(-1)!;
+            const total = q.deltas.reduce((a, d) => a + d.delta, 0);
+            return (
+              <div key={q.queue}>
+                <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                  <span><span className="text-muted">{q.label} :</span> <span className="font-display font-semibold">{tierLabel(last)} · {last.lp} PL</span></span>
+                  {q.deltas.length > 0 && <span className={`font-display tabular-nums ${total >= 0 ? "text-win" : "text-loss"}`}>{total >= 0 ? "+" : "−"}{Math.abs(total)} PL depuis le {new Date(q.snaps[0]!.at).toLocaleDateString("fr-FR")}</span>}
+                </p>
+                <LpChart points={q.points} ticks={q.ticks} />
+              </div>
+            );
+          })
+        )}
+      </section>
 
       <section className="card" data-testid="weekly-review">
         <h2 className="h2">Bilan des 7 derniers jours</h2>

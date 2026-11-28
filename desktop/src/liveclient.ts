@@ -13,6 +13,26 @@ export interface GameProbe {
   gameTime(): Promise<number | null>; // secondes, null si aucune partie
   events(): Promise<LiveEvent[]>;
   activePlayer(): Promise<string | null>;
+  /** Tes propres statistiques (compagnon de partie) : jamais celles d'un ennemi. */
+  myStats?(): Promise<MyStats | null>;
+}
+
+export type MyStats = { gameTimeSec: number; level: number; gold: number; kills: number; deaths: number; assists: number; cs: number; csPerMin: number; wards: number };
+
+type PlayerListEntry = { riotId?: string; summonerName?: string; level?: number; scores?: { kills?: number; deaths?: number; assists?: number; creepScore?: number; wardScore?: number } };
+
+/** Compagnon : extrait TES statistiques (joueur actif) de la liste des joueurs de l'API locale. */
+export function pickMyStats(active: { riotId?: string; summonerName?: string; level?: number; currentGold?: number } | null, list: PlayerListEntry[] | null, gameTimeSec: number | null): MyStats | null {
+  if (!active || !list || gameTimeSec == null) return null;
+  const me = list.find((p) => (active.riotId && p.riotId === active.riotId) || (active.summonerName && p.summonerName === active.summonerName));
+  if (!me) return null;
+  const cs = me.scores?.creepScore ?? 0;
+  return {
+    gameTimeSec, level: active.level ?? me.level ?? 1, gold: Math.round(active.currentGold ?? 0),
+    kills: me.scores?.kills ?? 0, deaths: me.scores?.deaths ?? 0, assists: me.scores?.assists ?? 0, cs,
+    csPerMin: gameTimeSec >= 60 ? Math.round((cs / (gameTimeSec / 60)) * 10) / 10 : 0,
+    wards: Math.round((me.scores?.wardScore ?? 0) * 10) / 10,
+  };
 }
 
 /** Requête locale : le client utilise un certificat auto-signé, accepté UNIQUEMENT pour 127.0.0.1. */
@@ -64,6 +84,15 @@ export class LiveClientProbe implements GameProbe {
     const n = await getJson<string>(this.base, "/liveclientdata/activeplayername");
     return typeof n === "string" ? n : null;
   }
+  async myStats() {
+    const [active, list, gs] = await Promise.all([
+      getJson<{ riotId?: string; summonerName?: string; level?: number; currentGold?: number }>(this.base, "/liveclientdata/activeplayer"),
+      getJson<PlayerListEntry[]>(this.base, "/liveclientdata/playerlist"),
+      getJson<{ gameTime?: number }>(this.base, "/liveclientdata/gamestats"),
+    ]);
+    return pickMyStats(active, list, gs?.gameTime ?? null);
+  }
+
 }
 
 export type WatcherEvent = { type: "start"; gameTimeSec: number } | { type: "end"; reason: "game_end_event" | "client_gone" };

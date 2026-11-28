@@ -80,3 +80,14 @@ npm run agent -- autostart on
 Ajoute un raccourci dans le dossier « Démarrage » de l'utilisateur (sans droits administrateur) : l'agent démarre
 réduit à l'ouverture de session et attend le client et les parties. `npm run agent -- autostart off` pour l'enlever.
 Ce n'est pas encore un installateur `.exe` : Node.js et le dossier du projet restent nécessaires.
+
+## Sorts d'invocateur, acceptation automatique, compagnon de partie
+
+- **Sorts d'invocateur** conseillés réglés au verrouillage (`champSelect.importSpells`, activé) ; Saut éclair reste
+  sur la touche où tu l'avais (D ou F).
+- **Acceptation automatique** de la partie trouvée (`champSelect.autoAccept`) : **désactivée par défaut**, à activer
+  soi-même dans `config.json`. Vérifie qu'elle est toujours permise par les règles de Riot pour les applications tierces.
+- **Compagnon de partie** : pendant la partie, l'interface locale affiche **tes** statistiques en direct (sbires par
+  minute, sbires, KDA, or, niveau) via l'API locale du jeu en lecture seule. Rien sur les ennemis, rien par-dessus le
+  jeu : à ouvrir sur un 2e écran ou un téléphone (même réseau).
+- **Jamais** : bannissement, choix ou verrouillage automatiques.

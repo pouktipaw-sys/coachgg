@@ -186,6 +186,7 @@ model GameIdentity {
   @@unique([userId, provider, gameName, tagLine])
   @@index([gameName, tagLine])
   @@index([puuid])
+  rankSnapshots RankSnapshot[]
 }
 
 enum ExplanationLevel {
@@ -1061,4 +1062,20 @@ model AppState {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+// Suivi des LP : photo du rang d'un compte Riot à chaque actualisation où il a changé.
+model RankSnapshot {
+  id         String       @id @default(cuid())
+  identityId String
+  identity   GameIdentity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+  queue      String
+  tier       String
+  division   String
+  lp         Int
+  wins       Int
+  losses     Int
+  at         DateTime     @default(now())
+
+  @@index([identityId, queue, at])
 }

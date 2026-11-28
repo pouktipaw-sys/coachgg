@@ -5,10 +5,35 @@ import type { RiotMatch, RiotTimeline } from "@/server/riot/client";
 /** Modes collectés : classée solo/duo (par rôle), ARAM et Arena (sans rôle : « ANY »). */
 export const META_MODES = { RANKED: 420, ARAM: 450, ARENA: 1700 } as const;
 export type MetaMode = keyof typeof META_MODES;
-/** Clé de stockage d'un patch pour un mode : « 15.20 » (classée), « 15.20@ARAM », « 15.20@ARENA ». */
-export const metaPatchKey = (patch: string, mode: MetaMode) => (mode === "RANKED" ? patch : `${patch}@${mode}`);
-export const modeOfPatchKey = (key: string): MetaMode => (key.endsWith("@ARAM") ? "ARAM" : key.endsWith("@ARENA") ? "ARENA" : "RANKED");
-export const patchOfKey = (key: string) => key.split("@")[0]!;
+/** Rangs (seau de statistiques) : rang du joueur dont la partie a été collectée. ALL = tous rangs confondus. */
+export const META_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"] as const;
+export type MetaTier = (typeof META_TIERS)[number];
+
+/**
+ * Clé de stockage (« seau ») : patch + mode + rang + serveur, compatible avec les clés existantes.
+ * « 15.20 » = classée, tous rangs, tous serveurs ; « 15.20@ARAM » ; « 15.20~T:GOLD » ; « 15.20~T:GOLD~P:EUW1 ».
+ */
+export function metaPatchKey(patch: string, mode: MetaMode, tier = "ALL", platform = "ALL") {
+  let k = mode === "RANKED" ? patch : `${patch}@${mode}`;
+  if (tier !== "ALL") k += `~T:${tier}`;
+  if (platform !== "ALL") k += `~P:${platform}`;
+  return k;
+}
+export function parseMetaKey(key: string) {
+  const [head, ...rest] = key.split("~");
+  const [patch, mode] = head!.split("@");
+  const get = (p: string) => rest.find((r) => r.startsWith(p))?.slice(p.length) ?? "ALL";
+  return { patch: patch!, mode: (mode === "ARAM" || mode === "ARENA" ? mode : "RANKED") as MetaMode, tier: get("T:"), platform: get("P:") };
+}
+export const modeOfPatchKey = (key: string): MetaMode => parseMetaKey(key).mode;
+export const patchOfKey = (key: string) => parseMetaKey(key).patch;
+/** Les 4 seaux d'une partie : global, par rang, par serveur, par rang et serveur. */
+export function bucketKeys(baseKey: string, tier: string | null, platform: string) {
+  const { patch, mode } = parseMetaKey(baseKey);
+  const keys = [metaPatchKey(patch, mode), metaPatchKey(patch, mode, "ALL", platform)];
+  if (tier) keys.push(metaPatchKey(patch, mode, tier), metaPatchKey(patch, mode, tier, platform));
+  return keys;
+}
 
 /** « 15.20.512.3456 » → « 15.20 ». */
 export const patchOf = (gameVersion: string) => gameVersion.split(".").slice(0, 2).join(".");
@@ -22,7 +47,8 @@ export type MetaRows = {
   items: { championId: number; role: string; itemId: number; win: boolean }[];
   runes: { championId: number; role: string; pageKey: string; win: boolean }[];
   matchups: { championId: number; role: string; opponentId: number; win: boolean }[];
-  choices: { championId: number; role: string; kind: "spells" | "skills" | "core"; key: string; win: boolean }[];
+  /** kind : spells, skills, core ; « rune@<adversaire> » et « core@<adversaire> » (build contre un champion) ; « ally:<rôle> » (synergie, key = champion allié). */
+  choices: { championId: number; role: string; kind: string; key: string; win: boolean }[];
   players: { puuid: string; riotId: string | null; championId: number; win: boolean }[];
 };
 
@@ -60,11 +86,15 @@ export function metaRows(m: RiotMatch, mode: MetaMode = "RANKED"): MetaRows | nu
     for (const it of new Set([p.item0, p.item1, p.item2, p.item3, p.item4, p.item5].filter((x): x is number => !!x))) rows.items.push({ ...base, itemId: it });
     const key = p.perks ? runePageKey(p.perks) : null;
     if (key) rows.runes.push({ ...base, pageKey: key });
+    if (p.summoner1Id && p.summoner2Id) rows.choices.push({ ...base, kind: "spells", key: [p.summoner1Id, p.summoner2Id].sort((a, b) => a - b).join(",") });
     if (ranked) {
       const opp = ps.find((o) => o.teamId !== p.teamId && o.teamPosition === role);
-      if (opp?.championId) rows.matchups.push({ ...base, opponentId: opp.championId });
+      if (opp?.championId) {
+        rows.matchups.push({ ...base, opponentId: opp.championId });
+        if (key) rows.choices.push({ ...base, kind: `rune@${opp.championId}`, key });
+      }
+      for (const a of ps) if (a !== p && a.teamId === p.teamId && a.championId) rows.choices.push({ ...base, kind: `ally:${a.teamPosition}`, key: String(a.championId) });
     }
-    if (p.summoner1Id && p.summoner2Id) rows.choices.push({ ...base, kind: "spells", key: [p.summoner1Id, p.summoner2Id].sort((a, b) => a - b).join(",") });
     if (ranked && p.puuid) rows.players.push({ puuid: p.puuid, riotId: p.riotIdGameName && p.riotIdTagline ? `${p.riotIdGameName}#${p.riotIdTagline}` : null, championId: p.championId!, win });
   }
   rows.bans = [...new Set((m.info.teams ?? []).flatMap((t) => (t.bans ?? []).map((b) => b.championId)).filter((id) => id > 0))];
@@ -111,7 +141,11 @@ export function timelineChoices(tl: RiotTimeline, m: RiotMatch, mode: MetaMode, 
       core.push(e.itemId);
       if (core.length === 3) break;
     }
-    if (core.length === 3) out.push({ championId: p.championId, role, kind: "core", key: core.join(">"), win });
+    if (core.length === 3) {
+      out.push({ championId: p.championId, role, kind: "core", key: core.join(">"), win });
+      const opp = mode === "RANKED" ? m.info.participants.find((o) => o.teamId !== p.teamId && o.teamPosition === role) : undefined;
+      if (opp?.championId) out.push({ championId: p.championId, role, kind: `core@${opp.championId}`, key: core.join(">"), win });
+    }
   });
   return out;
 }

@@ -46,18 +46,40 @@ export class RiotNotConfiguredError extends Error {
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
+/**
+ * Limiteur de débit partagé par clé : Riot renvoie ses quotas dans les en-têtes (X-App-Rate-Limit « 20:1,100:120 »
+ * et X-App-Rate-Limit-Count « 3:1,41:120 »). Quand une fenêtre est pleine, les requêtes suivantes attendent sa fin,
+ * au lieu de déclencher des 429. Fonctionne pareil avec une clé de développement ou de production.
+ */
+const pauseUntil = new Map<string, number>();
+export function rateLimitPause(limits: string | null, counts: string | null): number {
+  if (!limits || !counts) return 0;
+  const used = new Map(counts.split(",").map((c) => { const [n, w] = c.split(":").map(Number); return [w, n] as const; }));
+  let pause = 0;
+  for (const l of limits.split(",")) {
+    const [max, win] = l.split(":").map(Number);
+    if (!max || !win) continue;
+    if ((used.get(win) ?? 0) >= max) pause = Math.max(pause, win * 1000);
+  }
+  return pause;
+}
+
 export class RiotClient {
   /** maxWaitSec : attente maximale respectée sur un 429 (tâches de fond : jusqu'à 2 min). */
   constructor(private key: string, private fetcher: FetchLike = fetch, private maxRetries = 2, private maxWaitSec = 10) {}
 
   private async get<T>(url: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
+      const wait = (pauseUntil.get(this.key) ?? 0) - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, this.maxWaitSec * 1000)));
       let res: Response;
       try {
         res = await this.fetcher(url, { headers: { "X-Riot-Token": this.key }, signal: AbortSignal.timeout(10_000) });
       } catch {
         throw new RiotApiError(503, "Service Riot injoignable.");
       }
+      const pause = rateLimitPause(res.headers.get("x-app-rate-limit"), res.headers.get("x-app-rate-limit-count"));
+      if (pause) pauseUntil.set(this.key, Math.max(pauseUntil.get(this.key) ?? 0, Date.now() + pause));
       if (res.ok) return (await res.json()) as T;
       if (res.status === 429 && attempt < this.maxRetries) {
         const wait = Math.min(this.maxWaitSec, Number(res.headers.get("retry-after") ?? 1));
@@ -101,6 +123,13 @@ export class RiotClient {
   apexLeague(tier: "challenger" | "grandmaster" | "master", queue: string, platform: string) {
     return this.get<{ entries: { puuid: string; leaguePoints: number; wins: number; losses: number; hotStreak?: boolean; veteran?: boolean; freshBlood?: boolean; inactive?: boolean }[] }>(
       `https://${platform.toLowerCase()}.api.riotgames.com/lol/league/v4/${tier}leagues/by-queue/${encodeURIComponent(queue)}`,
+    );
+  }
+
+  /** LEAGUE-EXP-V4 : joueurs d'un rang et d'une division (page de 205 joueurs environ). */
+  leagueExp(tier: string, division: string, page: number, platform: string, queue = "RANKED_SOLO_5x5") {
+    return this.get<{ puuid: string; tier: string; rank: string; leaguePoints: number }[]>(
+      `https://${platform.toLowerCase()}.api.riotgames.com/lol/league-exp/v4/entries/${encodeURIComponent(queue)}/${encodeURIComponent(tier)}/${encodeURIComponent(division)}?page=${Math.max(1, page)}`,
     );
   }
 

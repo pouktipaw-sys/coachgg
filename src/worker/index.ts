@@ -87,21 +87,27 @@ async function main() {
   process.on("SIGINT", () => (stopping = true));
   process.on("SIGTERM", () => (stopping = true));
   let lastPurge = 0;
+  let lastMetaSchedule = 0;
   while (!stopping) {
     if (Date.now() - lastPurge > 3600_000) {
       lastPurge = Date.now();
       await purgeExpiredRecordings()
         .then((n) => n && console.log(`[worker] conservation : ${n} vidéo(s) purgée(s)`))
         .catch((e) => console.error("[worker] purge échouée :", e instanceof Error ? e.message : e));
-      await scheduleMetaCrawls()
-        .then((n) => n && console.log(`[worker] statistiques méta : ${n} collecte(s) planifiée(s)`))
-        .catch((e) => console.error("[worker] planification méta échouée :", e instanceof Error ? e.message : e));
       await checkNewPatch()
-        .then((r) => r.changed && console.log(`[worker] nouveau patch ${r.version} : ${r.notified} joueur(s) prévenu(s)`))
+        .then(async (r) => {
+          if (!r.changed) return;
+          console.log(`[worker] nouveau patch ${r.version} : ${r.notified} joueur(s) prévenu(s)`);
+          await scheduleMetaCrawls(new Date(), { rush: r.version }); // statistiques du nouveau patch au plus vite
+        })
         .catch(() => {}); // données du jeu injoignables : on réessaie à l'heure suivante
       await sendWeeklyReviews()
         .then((n) => n && console.log(`[worker] bilans hebdomadaires : ${n} notification(s)`))
         .catch((e) => console.error("[worker] bilans hebdomadaires échoués :", e instanceof Error ? e.message : e));
+    }
+    if (Date.now() - lastMetaSchedule > 60_000) {
+      lastMetaSchedule = Date.now(); // créneaux de META_CRAWL_EVERY_MIN minutes, vérifiés chaque minute
+      await scheduleMetaCrawls().catch(() => {});
     }
     const n = await drain(10).catch((e) => {
       console.error("[worker] erreur de boucle :", e instanceof Error ? e.message : e);

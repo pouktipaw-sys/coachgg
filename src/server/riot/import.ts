@@ -239,5 +239,11 @@ export async function refreshRank(userId: string, identityId: string, client: Ri
   const rank = entries
     .filter((e) => RANKED_QUEUES[e.queueType])
     .map((e) => ({ queue: e.queueType, label: RANKED_QUEUES[e.queueType], tier: e.tier, division: e.rank, lp: e.leaguePoints, wins: e.wins, losses: e.losses }));
+  // Suivi des LP : une photo par file quand le rang a changé depuis la dernière.
+  for (const r of rank) {
+    const last = await prisma.rankSnapshot.findFirst({ where: { identityId: identity.id, queue: r.queue }, orderBy: { at: "desc" } });
+    if (!last || last.tier !== r.tier || last.division !== r.division || last.lp !== r.lp || last.wins !== r.wins || last.losses !== r.losses)
+      await prisma.rankSnapshot.create({ data: { identityId: identity.id, queue: r.queue, tier: r.tier, division: r.division, lp: r.lp, wins: r.wins, losses: r.losses } });
+  }
   return prisma.gameIdentity.update({ where: { id: identity.id }, data: { puuid, rank, rankFetchedAt: new Date() } });
 }

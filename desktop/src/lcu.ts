@@ -69,7 +69,7 @@ export function httpsTransport(lock: Lockfile): LcuTransport {
 
 export type ChampSelect = {
   localPlayerCellId: number;
-  myTeam: { cellId: number; championId: number; championPickIntent?: number; assignedPosition?: string }[];
+  myTeam: { cellId: number; championId: number; championPickIntent?: number; assignedPosition?: string; spell1Id?: number; spell2Id?: number }[];
   theirTeam: { cellId: number; championId: number; assignedPosition?: string }[];
   bans?: { myTeamBans?: number[]; theirTeamBans?: number[] };
   actions?: { actorCellId: number; championId: number; completed: boolean; type: string }[][];
@@ -105,6 +105,24 @@ export class Lcu {
     return r.status >= 200 && r.status < 300;
   }
 
+  /** Partie trouvée : vérification « Accepter » en cours et pas encore répondue. */
+  async readyCheckPending(): Promise<boolean> {
+    const r = await this.t("GET", "/lol-matchmaking/v1/ready-check");
+    const d = r.data as { state?: string; playerResponse?: string } | null;
+    return r.status === 200 && d?.state === "InProgress" && d.playerResponse === "None";
+  }
+
+  async acceptReadyCheck() {
+    const r = await this.t("POST", "/lol-matchmaking/v1/ready-check/accept");
+    return r.status >= 200 && r.status < 300;
+  }
+
+  /** Sorts d'invocateur de la sélection (préparation, comme les runes : modifiables ensuite par le joueur). */
+  async setSpells(spell1Id: number, spell2Id: number) {
+    const r = await this.t("PATCH", "/lol-champ-select/v1/session/my-selection", { spell1Id, spell2Id });
+    return r.status >= 200 && r.status < 300;
+  }
+
   /** Ensemble d'objets « CoachGG » pour le champion (remplace le précédent du même champion). */
   async applyItemSet(summonerId: number, championId: number, title: string, items: number[]) {
     const cur = await this.t("GET", `/lol-item-sets/v1/item-sets/${summonerId}/sets`);
@@ -134,4 +152,19 @@ export function readChampSelect(s: ChampSelect) {
   const taken = [...s.myTeam.map((p) => p.championId), ...s.theirTeam.map((p) => p.championId), ...(s.bans?.myTeamBans ?? []), ...(s.bans?.theirTeamBans ?? [])].filter((id) => id > 0 && id !== championId);
   const enemyLaner = role ? s.theirTeam.find((p) => p.assignedPosition && POSITIONS[p.assignedPosition.toLowerCase()] === role && p.championId > 0)?.championId ?? null : null;
   return { role, championId, locked, taken: [...new Set(taken)], enemyLaner };
+}
+
+/**
+ * Ordre des sorts d'invocateur : on garde Saut éclair (4) sur la touche où le joueur l'a déjà (D ou F),
+ * pour ne jamais lui changer ses réflexes.
+ */
+export function orderSpells(recommended: number[], current: [number | undefined, number | undefined]): [number, number] {
+  const [a, b] = recommended as [number, number];
+  const FLASH = 4;
+  if (recommended.includes(FLASH)) {
+    const other = a === FLASH ? b : a;
+    if (current[1] === FLASH) return [other, FLASH];
+    if (current[0] === FLASH) return [FLASH, other];
+  }
+  return [a, b];
 }

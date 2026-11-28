@@ -3,7 +3,7 @@
 // locale de l'agent. Ne fait rien en partie et n'agit jamais à ta place (pas de choix ni de verrouillage automatique).
 import type { CoachApi } from "./api";
 import type { AgentConfig } from "./config";
-import { type Lcu, readChampSelect } from "./lcu";
+import { type Lcu, orderSpells, readChampSelect } from "./lcu";
 
 type Advice = Awaited<ReturnType<CoachApi["draftAdvice"]>>["advice"];
 
@@ -31,6 +31,12 @@ export class ChampSelectAssistant {
     if (!lcu) {
       this.status = "client_closed";
       this.message = "Client League of Legends fermé.";
+      return;
+    }
+    // Acceptation automatique de la partie trouvée (option désactivée par défaut).
+    if (this.cfg.champSelect.autoAccept && (await lcu.readyCheckPending()) && (await lcu.acceptReadyCheck())) {
+      this.message = "Partie acceptée automatiquement.";
+      this.log(this.message);
       return;
     }
     const s = await lcu.champSelect();
@@ -72,6 +78,11 @@ export class ChampSelectAssistant {
     if (this.cfg.champSelect.importItems && b.items.length) {
       const sid = await lcu.summonerId();
       if (sid && (await lcu.applyItemSet(sid, info.championId, `CoachGG ${b.role} (${b.patch})`, b.items.map((i) => i.itemId)))) done.push("ensemble d'objets");
+    }
+    if (this.cfg.champSelect.importSpells && b.spells?.length === 2) {
+      const me = s.myTeam.find((p) => p.cellId === s.localPlayerCellId);
+      const [s1, s2] = orderSpells(b.spells, [me?.spell1Id, me?.spell2Id]);
+      if (await lcu.setSpells(s1, s2)) done.push("sorts d'invocateur");
     }
     const tips = [b.skillOrder ? `monte ${b.skillOrder.replace(/>/g, " › ")}` : null].filter(Boolean).join(" · ");
     this.message = (done.length ? `Importé dans le client : ${done.join(" et ")} (patch ${b.patch}, ${b.games} parties).` : "Import désactivé ou refusé par le client.") + (tips ? ` Conseil : ${tips}.` : "");

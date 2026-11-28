@@ -147,3 +147,47 @@ describe("méta : modes, timeline, meilleurs joueurs, notifications de patch", a
     setDdragonFetcher(null);
   });
 });
+
+describe("méta par rang et serveur, build contre un adversaire, synergies, suivi des LP", async () => {
+  const { metaOverview, metaVersus, metaSynergies, metaTierList } = await import("@/server/meta");
+  const { refreshRank } = await import("@/server/riot/import");
+  const { makeUser } = await import("./helpers");
+
+  it("collecte par rang : seaux global, serveur, rang, rang+serveur ; contre un adversaire ; synergies", async () => {
+    await prisma.$executeRawUnsafe(`TRUNCATE "MetaMatch","MetaPatch","MetaChampionStat","MetaBan","MetaItemStat","MetaRunePage","MetaMatchup","MetaChoice","MetaPlayerChampion"`);
+    const games = Array.from({ length: 10 }, (_, i) => fakeRanked(`EUW1_G${i}`, i % 5 !== 0));
+    const client = new RiotClient("k", async (url: string) => {
+      const j = (x: unknown) => new Response(JSON.stringify(x), { status: 200 });
+      if (url.includes("/league-exp/v4/entries/RANKED_SOLO_5x5/GOLD/")) return j([{ puuid: "G1", tier: "GOLD", rank: "II", leaguePoints: 10 }]);
+      if (url.includes("/ids?")) return j(games.map((g) => g.metadata.matchId));
+      const m = /\/matches\/(EUW1_\w+)$/.exec(url);
+      if (m) return j(games.find((g) => g.metadata.matchId === m[1])!);
+      return new Response("{}", { status: 404 });
+    });
+    const r = await crawlMeta("EUW1", 100, client, { tiers: ["GOLD"] });
+    expect(r).toMatchObject({ added: 10, byTier: { GOLD: 10 } });
+    for (const key of ["15.20", "15.20~P:EUW1", "15.20~T:GOLD", "15.20~T:GOLD~P:EUW1"])
+      expect((await prisma.metaPatch.findUniqueOrThrow({ where: { patch: key } })).games).toBe(10);
+    const ov = (await metaOverview(undefined, "RANKED", "GOLD", "EUW1"))!;
+    expect(ov).toMatchObject({ key: "15.20~T:GOLD~P:EUW1", tier: "GOLD", platform: "EUW1", games: 10 });
+    expect(await metaOverview(undefined, "RANKED", "DIAMOND")).toBeNull(); // aucun seau Diamant : rien d'inventé
+    expect((await metaTierList(ov.key, "MIDDLE")).games).toBe(10);
+    const vs = (await metaVersus(3, "MIDDLE", 8, "15.20"))!;
+    expect(vs).toMatchObject({ games: 10, winrate: 80, runes: { games: 10 } });
+    const syn = await metaSynergies(3, "MIDDLE", "15.20");
+    expect(syn.find((g) => g.role === "JUNGLE")!.best[0]).toMatchObject({ allyId: 2, games: 10, winrate: 80 });
+  });
+
+  it("suivi des LP : une photo par changement de rang, pas de doublon", async () => {
+    const u = await makeUser("Lp");
+    const id = await prisma.gameIdentity.create({ data: { userId: u.id, gameName: "Lp", tagLine: "EUW", platform: "EUW1", puuid: "LP1" } });
+    let lp = 40;
+    const client = new RiotClient("k", async () => new Response(JSON.stringify([{ queueType: "RANKED_SOLO_5x5", tier: "GOLD", rank: "II", leaguePoints: lp, wins: 10, losses: 9 }]), { status: 200 }));
+    await refreshRank(u.id, id.id, client);
+    await refreshRank(u.id, id.id, client); // inchangé : pas de nouvelle photo
+    lp = 62;
+    await refreshRank(u.id, id.id, client);
+    const snaps = await prisma.rankSnapshot.findMany({ where: { identityId: id.id }, orderBy: { at: "asc" } });
+    expect(snaps.map((x) => x.lp)).toEqual([40, 62]);
+  });
+});

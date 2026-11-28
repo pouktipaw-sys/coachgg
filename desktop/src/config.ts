@@ -54,6 +54,10 @@ export const configSchema = z.object({
       // l'ensemble d'objets « méta » quand ton champion est verrouillé, et conseils (contres, bannissements).
       importRunes: z.boolean().default(true),
       importItems: z.boolean().default(true),
+      // Sorts d'invocateur conseillés réglés au verrouillage (Saut éclair gardé sur ta touche habituelle).
+      importSpells: z.boolean().default(true),
+      // Accepter automatiquement la partie trouvée. DÉSACTIVÉ par défaut : à activer soi-même, selon les règles de Riot.
+      autoAccept: z.boolean().default(false),
       lockfile: z.string().optional(), // chemin du fichier « lockfile » du client si installé ailleurs
     })
     .prefault({}),

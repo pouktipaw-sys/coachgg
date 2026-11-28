@@ -53,12 +53,21 @@ describe("méta : sorts, ordre des sorts et des objets, modes", async () => {
     expect(c.filter((x) => x.championId === 1)).toEqual([
       { championId: 1, role: "TOP", kind: "skills", key: "Q>E>W", win: true },
       { championId: 1, role: "TOP", kind: "core", key: "3089>3020>3157", win: true },
+      { championId: 1, role: "TOP", kind: "core@6", key: "3089>3020>3157", win: true }, // même build, contre l'adversaire de voie
     ]);
   });
-  it("sorts d'invocateur et joueurs (classée) ; ARAM sans rôle ni matchup ; Arena : victoire = top 4", () => {
+  it("sorts d'invocateur et joueurs (classée) ; ARAM sans rôle ni matchup ; Arena : victoire = top 4", async () => {
     const r = metaRows(fakeRanked("EUW1_8", true))!;
     expect(r.choices[0]).toEqual({ championId: 1, role: "TOP", kind: "spells", key: "4,14", win: true });
     expect(r.players[0]).toEqual({ puuid: "p0", riotId: "Joueur0#EUW", championId: 1, win: true });
+    // Build contre l'adversaire de voie (runes) et synergies avec les 4 alliés
+    const mine = r.choices.filter((c) => c.championId === 1);
+    expect(mine.find((c) => c.kind === "rune@6")!.key).toMatch(/^8100\|8000\|/);
+    expect(mine.filter((c) => c.kind.startsWith("ally:")).map((c) => `${c.kind}=${c.key}`)).toEqual(["ally:JUNGLE=2", "ally:MIDDLE=3", "ally:BOTTOM=4", "ally:UTILITY=5"]);
+    const { bucketKeys, parseMetaKey, metaPatchKey: k } = await import("@/lib/riot/meta");
+    expect(bucketKeys("15.20", "GOLD", "EUW1")).toEqual(["15.20", "15.20~P:EUW1", "15.20~T:GOLD", "15.20~T:GOLD~P:EUW1"]);
+    expect(parseMetaKey(k("15.20", "ARAM", "GOLD", "KR"))).toEqual({ patch: "15.20", mode: "ARAM", tier: "GOLD", platform: "KR" });
+    expect(parseMetaKey("15.20")).toEqual({ patch: "15.20", mode: "RANKED", tier: "ALL", platform: "ALL" });
     const aram = metaRows({ ...fakeRanked("EUW1_9", true), info: { ...fakeRanked("EUW1_9", true).info, queueId: 450 } }, "ARAM")!;
     expect(aram.patch).toBe("15.20@ARAM");
     expect(aram.champs[0]!.role).toBe("ANY");
