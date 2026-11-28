@@ -29,6 +29,9 @@ export const analysisOutputSchema = z.object({
   version: z.string(),
   sampling: z.object({ fps: z.number(), frames: z.number().int(), width: z.number().int() }),
   baselines: z.object({ saturation: z.number(), motionMedian: z.number(), minimap: z.boolean() }),
+  // Minimap détectée automatiquement (cadre fixe dans un coin bas) ; source de la zone utilisée.
+  minimapGuess: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), confidence: z.number() }).nullish(),
+  minimapSource: z.enum(["manual", "auto"]).nullish(),
   events: z
     .array(
       z.object({

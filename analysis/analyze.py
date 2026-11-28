@@ -94,8 +94,8 @@ def detect_grey(sat: np.ndarray, fps: float) -> tuple[list[dict], float, list[st
     full_min = max(1, int(round(GREY_MIN_SEC * fps)))
     out = []
     for a, b in segments(low, end_min):
-        if b - a + 1 < full_min and b < len(sat) - 1:
-            continue  # trop court, sauf s'il est coupé par la fin de la vidéo
+        if b - a + 1 < full_min and b < len(sat) - 1 - max(1, int(round(fps))):
+            continue  # trop court, sauf s'il est coupé par la fin de la vidéo (ou s'arrête moins d'1 s avant)
         if float(np.min(sat[a : b + 1])) >= GREY_RATIO * baseline:
             continue
         ratio = float(np.mean(sat[a : b + 1]) / baseline)
@@ -108,7 +108,7 @@ def detect_grey(sat: np.ndarray, fps: float) -> tuple[list[dict], float, list[st
     return out[:MAX_DEATHS], baseline, warnings
 
 
-REFINE_FPS = 15.0
+REFINE_FPS = 60.0  # pas de 17 ms (images dupliquées si la vidéo est en 30 i/s : précision = 1 image)
 
 
 def first_grey_index(sats: list[float], threshold: float) -> int | None:
@@ -120,8 +120,36 @@ def first_grey_index(sats: list[float], threshold: float) -> int | None:
     return None
 
 
+def grey_onset(sats: list[float], i: int) -> int:
+    """Instant réel de la mort à partir du premier échantillon « gris » i :
+    • chute brutale d'une image à l'autre → c'est le début (on ne remonte pas) ;
+    • fondu progressif → on remonte la baisse, image par image, jusqu'au niveau d'avant ;
+    • jamais à travers un palier (> 4 images identiques) ni plus de 0,66 s en arrière.
+    Calé sur le banc d'essai (fondus) ET sur un vrai clip (petite baisse de décor 0,5 s avant la mort)."""
+    ref = max(sats[max(0, i - 40) : max(1, i)])
+    k = j = i
+    plateau = 0
+    while j > 0 and i - j < 40:
+        prev, cur = sats[j - 1], sats[j]
+        if prev - cur > 0.4 * ref:
+            break  # chute brutale : l'image courante est le début
+        if prev > cur + 0.5:
+            if prev >= ref * 0.94:
+                break  # niveau d'avant la mort atteint
+            k = j - 1
+            plateau = 0
+        elif abs(prev - cur) <= 0.5:
+            plateau += 1  # image dupliquée (vidéo en 30 i/s lue à 60) ou palier
+            if plateau > 4:
+                break
+        else:
+            break  # la saturation remonte en arrière : pas un fondu
+        j -= 1
+    return k
+
+
 def refine_grey_start(video: str, width: int, height: int, start_s: float, baseline: float, ffmpeg: str) -> float | None:
-    """Affine le début d'un écran grisé : 1,6 s autour de la détection, à 15 images/s (précision ~70 ms)."""
+    """Affine le début d'un écran grisé : 1,6 s autour de la détection, à 60 images/s, puis début de la baisse."""
     w = SAMPLE_WIDTH
     h = int(round(w * height / width / 2) * 2)
     t0 = max(0.0, start_s - 1.0)
@@ -139,7 +167,7 @@ def refine_grey_start(video: str, width: int, height: int, start_s: float, basel
         frame = np.frombuffer(raw[k * fb : (k + 1) * fb], np.uint8).reshape(h, w, 3)
         sats.append(frame_saturation(frame[gsl]))
     i = first_grey_index(sats, GREY_EXTEND_RATIO * baseline)
-    return None if i is None else t0 + i / REFINE_FPS
+    return None if i is None else t0 + grey_onset(sats, i) / REFINE_FPS
 
 
 def detect_activity(motion: np.ndarray, fps: float, exclude: list[tuple[int, int]]) -> tuple[list[dict], float]:
@@ -232,6 +260,136 @@ def sample_video(video: str, width: int, height: int, fps: float, minimap, durat
     return Series(np.array(sats), np.array(motions), np.array(reds) if msl is not None else None, masks)
 
 
+MM_FRAMES = 7          # images réparties dans la vidéo pour repérer la minimap
+MM_WIDTH = 960         # résolution de travail (précision ~0,1 % de la largeur)
+MM_MIN_CONF = 0.62     # persistance minimale du cadre (banc d'essai : vraies minimaps ≥ 0,65 ; mire de test 0,56)
+MM_SQUARE_TOL = 0.03   # une minimap est carrée en pixels (banc : ≤ 2 % d'écart ; faux positif : 4,5 %)
+
+
+def edge_persistence(frames: list[np.ndarray]) -> np.ndarray:
+    """Part des images où chaque pixel est un bord : ~1 pour l'interface fixe (cadre de la minimap), faible pour le jeu qui bouge."""
+    acc = None
+    for f in frames:
+        g = cv2.GaussianBlur(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), (3, 3), 0)
+        e = (cv2.Canny(g, 40, 120) > 0).astype(np.float32)
+        e = cv2.dilate(e, np.ones((2, 2), np.uint8))  # tolère 1 px de compression
+        acc = e if acc is None else acc + e
+    return acc / max(1, len(frames))
+
+
+def find_minimap(pers: np.ndarray) -> dict | None:
+    """Plus forte persistance moyenne sur les 4 côtés d'un CARRÉ (en pixels) collé à un coin bas de l'image."""
+    h, w = pers.shape
+    row_cum = np.concatenate([np.zeros((h, 1), np.float32), np.cumsum(pers, axis=1)], axis=1)  # sommes par ligne
+    col_cum = np.concatenate([np.zeros((1, w), np.float32), np.cumsum(pers, axis=0)], axis=0)  # sommes par colonne
+
+    def hline(y, x0, x1):
+        return (row_cum[y, x1] - row_cum[y, x0]) / max(1, x1 - x0)
+
+    def vline(x, y0, y1):
+        return (col_cum[y1, x] - col_cum[y0, x]) / max(1, y1 - y0)
+
+    best = None
+    for side in ("right", "left"):
+        for s in range(int(h * 0.14), int(h * 0.46)):
+            for mb in range(0, int(h * 0.05) + 1):
+                y0 = h - mb - s
+                if y0 < 0:
+                    continue
+                for mr in range(0, int(w * 0.03) + 1):
+                    x0 = w - mr - s if side == "right" else mr
+                    x1 = x0 + s - 1
+                    y1 = y0 + s - 1
+                    if x0 < 0 or x1 >= w:
+                        continue
+                    # côtés : on prend le meilleur de la ligne et de sa voisine intérieure (épaisseur du cadre)
+                    top = max(hline(y0, x0, x1), hline(min(y0 + 1, h - 1), x0, x1))
+                    bottom = max(hline(y1, x0, x1), hline(max(y1 - 1, 0), x0, x1))
+                    left = max(vline(x0, y0, y1), vline(min(x0 + 1, w - 1), y0, y1))
+                    right = max(vline(x1, y0, y1), vline(max(x1 - 1, 0), y0, y1))
+                    score = (top + left + min(bottom, right) * 0.5 + max(bottom, right) * 0.5) / 3.0
+                    score = min(score, 3 * min(top, left))  # le haut ET le côté intérieur doivent être nets
+                    if best is None or score > best[0]:
+                        best = (score, x0, y0, s)
+    if best is None or best[0] < MM_MIN_CONF:
+        return None
+    score, x0, y0, s = best
+    return {"x": x0 / w, "y": y0 / h, "w": s / w, "h": s / h, "confidence": round(float(score), 3)}
+
+
+def detect_minimap(video: str, width: int, height: int, duration_s: float, ffmpeg: str) -> dict | None:
+    """Zone de la minimap détectée automatiquement (None si aucun cadre net : à régler à la main)."""
+    w = MM_WIDTH
+    h = int(round(w * height / width / 2) * 2)
+    frames = []
+    for k in range(MM_FRAMES):
+        t = duration_s * (0.08 + 0.84 * k / max(1, MM_FRAMES - 1))
+        cmd = [ffmpeg, "-v", "error", "-nostdin", "-ss", f"{t:.2f}", "-i", video, "-frames:v", "1", "-vf", f"scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+        try:
+            raw = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60).stdout
+        except Exception:
+            continue
+        if len(raw) == w * h * 3:
+            frames.append(np.frombuffer(raw, np.uint8).reshape(h, w, 3))
+    if len(frames) < 3:
+        return None
+    # Recherche sur une image réduite de moitié (rapide), puis affinage au pixel autour du résultat.
+    pers = edge_persistence(frames)
+    small = cv2.resize(pers, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
+    coarse = find_minimap(small)
+    if not coarse:
+        return None
+    fine = refine_minimap(pers, coarse)
+    g = fine or coarse
+    ratio = (g["w"] * w) / max(1e-6, g["h"] * h)
+    if abs(ratio - 1) > MM_SQUARE_TOL:
+        return None  # pas carré : grille ou élément d'interface, pas une minimap
+    return g
+
+
+def refine_minimap(pers: np.ndarray, g: dict) -> dict | None:
+    """Affinage au pixel près, côté par côté : le cadre a deux bords (extérieur et intérieur) ; pour chaque côté, on prend
+    le CENTRE du trait du cadre le plus à l'extérieur, dans un voisinage de ±8 px (comme une zone réglée à la main)."""
+    h, w = pers.shape
+    x0c, y0c, s = int(round(g["x"] * w)), int(round(g["y"] * h)), int(round(g["h"] * h))
+    x1c, y1c = x0c + s - 1, y0c + s - 1
+    span_x = (max(0, x0c + s // 8), min(w, x1c - s // 8))  # partie centrale des côtés (évite les coins arrondis)
+    span_y = (max(0, y0c + s // 8), min(h, y1c - s // 8))
+
+    def best_line(score, lo, hi, outward_low: bool):
+        vals = [(k, score(k)) for k in range(max(0, lo), min(hi, (h if score is row else w) - 1) + 1)]
+        if not vals:
+            return None
+        top = max(v for _, v in vals)
+        # Groupes de lignes nettes contiguës (un bord du trait = un groupe), du plus extérieur au plus intérieur.
+        strong = sorted((k for k, v in vals if v >= 0.35 * top), reverse=not outward_low)
+        groups: list[list[int]] = []
+        for k in strong:
+            if groups and abs(k - groups[-1][-1]) <= 1:
+                groups[-1].append(k)
+            else:
+                groups.append([k])
+        centre = lambda grp: sum(grp) / len(grp)  # noqa: E731
+        outer = centre(groups[0])
+        # Le trait du cadre a un bord extérieur et un bord intérieur : on prend le milieu des deux.
+        inner = next((centre(g) for g in groups[1:] if 2 <= abs(centre(g) - outer) <= 10), None)
+        return int(round((outer + inner) / 2)) if inner is not None else int(round(outer))
+
+    def row(y):
+        return float(pers[y, span_x[0]:span_x[1]].mean()) if span_x[1] > span_x[0] else 0.0
+
+    def col(x):
+        return float(pers[span_y[0]:span_y[1], x].mean()) if span_y[1] > span_y[0] else 0.0
+
+    top = best_line(row, y0c - 8, y0c + 8, True)
+    bottom = best_line(row, y1c - 8, y1c + 8, False)
+    left = best_line(col, x0c - 8, x0c + 8, True)
+    right = best_line(col, x1c - 8, x1c + 8, False)
+    if None in (top, bottom, left, right) or bottom <= top or right <= left:
+        return None
+    return {"x": left / w, "y": top / h, "w": (right - left + 1) / w, "h": (bottom - top + 1) / h, "confidence": g["confidence"]}
+
+
 def contact_sheet(video: str, t_from: float, t_to: float, out_path: str, ffmpeg: str) -> bool:
     """Planche de 8 images entre t_from et t_to (contexte AVANT l'événement), horodatées en relatif."""
     tiles = []
@@ -271,6 +429,13 @@ def main() -> int:
 
     minimap = tuple(float(v) for v in a.minimap.split(",")) if a.minimap else None
     duration_s = a.duration_ms / 1000
+    log_progress(1)
+    # Minimap détectée automatiquement (cadre fixe dans un coin bas) : utilisée si aucune zone n'a été réglée.
+    minimap_guess = detect_minimap(a.video, a.width, a.height, duration_s, a.ffmpeg)
+    minimap_source = "manual" if minimap else None
+    if minimap is None and minimap_guess:
+        minimap = (minimap_guess["x"], minimap_guess["y"], minimap_guess["w"], minimap_guess["h"])
+        minimap_source = "auto"
     log_progress(2)
     s = sample_video(a.video, a.width, a.height, a.fps, minimap, duration_s, a.threads, a.ffmpeg)
     fps = a.fps
@@ -279,7 +444,7 @@ def main() -> int:
 
     warnings: list[str] = []
     if minimap is None:
-        warnings.append("Zone minimap non définie : signaux minimap non analysés.")
+        warnings.append("Zone minimap non définie et non détectée automatiquement : signaux minimap non analysés.")
     greys, sat_base, w1 = detect_grey(s.sat, fps)
     warnings += w1
     acts, motion_med = detect_activity(s.motion, fps, [(g["startIdx"] - ctx, g["endIdx"]) for g in greys])
@@ -338,6 +503,8 @@ def main() -> int:
         "version": VERSION,
         "sampling": {"fps": fps, "frames": int(len(s.sat)), "width": SAMPLE_WIDTH},
         "baselines": {"saturation": round(sat_base, 2), "motionMedian": round(motion_med, 3), "minimap": minimap is not None},
+        "minimapGuess": minimap_guess,
+        "minimapSource": minimap_source,
         "events": events,
         "warnings": warnings,
     }, sys.stdout)

@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from analyze import detect_activity, detect_grey, frame_saturation, minimap_rise, segments
+from analyze import detect_activity, detect_grey, find_minimap, frame_saturation, grey_onset, minimap_rise, segments
 
 
 class Segments(unittest.TestCase):
@@ -107,3 +107,33 @@ class TestChipRows(unittest.TestCase):
         rows = chip_rows(d, chips, font(13), 120)
         self.assertEqual([len(r) for r in rows], [1, 1, 1])
         self.assertEqual(rows[0][0][1], (248, 113, 113))
+
+
+class Onset(unittest.TestCase):
+    def test_gradual_fade_goes_back_to_start(self):
+        sats = [100.0] * 20 + [100 - 8 * k for k in range(1, 10)] + [26.0] * 10  # fondu sur 9 images
+        i = next(k for k, v in enumerate(sats) if v < 45)
+        self.assertEqual(grey_onset(sats, i), 20)
+
+    def test_sudden_drop_after_unrelated_dip(self):
+        # Vrai clip : petite baisse de décor (106 -> 94) 0,5 s avant, puis chute brutale (94 -> 26) : début = la chute.
+        sats = [106.0] * 20 + [94.0] * 32 + [26.0] * 10
+        self.assertEqual(grey_onset(sats, 52), 52)
+
+
+class Minimap(unittest.TestCase):
+    def test_finds_persistent_square_in_corner(self):
+        import numpy as np
+        pers = np.zeros((270, 480), np.float32)
+        x0, y0, s = 480 - 72 - 3, 270 - 72 - 3, 72
+        pers[y0, x0:x0 + s] = pers[y0 + s - 1, x0:x0 + s] = 1
+        pers[y0:y0 + s, x0] = pers[y0:y0 + s, x0 + s - 1] = 1
+        pers[200:210, 100:300] = 0.3  # interface qui bouge un peu
+        g = find_minimap(pers)
+        self.assertIsNotNone(g)
+        self.assertAlmostEqual(g["x"] * 480, x0, delta=1)
+        self.assertAlmostEqual(g["h"] * 270, s, delta=1)
+
+    def test_nothing_when_no_frame(self):
+        import numpy as np
+        self.assertIsNone(find_minimap(np.random.default_rng(1).random((270, 480)).astype(np.float32) * 0.2))

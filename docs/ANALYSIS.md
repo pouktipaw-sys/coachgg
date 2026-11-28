@@ -163,3 +163,35 @@ seulement avec 2 preuves valides, cause mesurée par la timeline prioritaire sur
 
 **Bilan** : erreurs récurrentes mesurées (facteur présent dans au moins 2 moments) en tête ; la priorité n°1 en traite une.
 Avec Claude, il reçoit les facteurs et faits de chaque moment.
+
+## Banc d'essai et calibrage (précision mesurée)
+
+`npm run bench:corpus -- dossier` génère 20 vidéos de type LoL avec leurs bonnes réponses (`analysis/bench/make_corpus.py`) :
+1080p, 720p, 1440p, ultra-large, 60 i/s, compression forte, webcam et chat de streamer, mort courte, mort coupée par la
+fin, morts rapprochées, minimap à gauche, petite et grande, et des **pièges** : scène sombre, tableau des scores,
+boutique, fondu au noir, partie sans mort. L'écran de mort grise le jeu en ~0,3 s, l'interface et la minimap restent en
+couleur (comme dans LoL). `npm run bench:run -- dossier` mesure : morts trouvées, fausses alertes, manquées, écart sur
+le début de la mort, recouvrement de la minimap détectée (IoU). Fonctionne aussi sur de vraies vidéos étiquetées
+(`labels.json` : `deaths` en secondes, `minimap` facultatif).
+
+| Mesure (20 vidéos, 24 morts) | Avant | Après |
+|---|---|---|
+| Morts trouvées (rappel) | 23/24 (96 %) | **24/24 (100 %)** |
+| Fausses alertes (pièges compris) | 0 | **0** |
+| Écart moyen sur le début de la mort | 207 ms (max 267) | **47 ms (max 50)** |
+| Minimap trouvée automatiquement | — (réglage à la main) | **20/20, recouvrement 98,8 % (1 à 2 px)** |
+
+Ce qui a changé :
+- **Début de la mort à l'image près** : affinage à 60 i/s, puis on remonte au début du fondu ; une **chute brutale**
+  est le début elle-même (vérifié sur un vrai clip de stream : une petite baisse de décor 0,5 s avant la mort ne doit
+  pas être prise pour le début — 9,217 s et 28,217 s pour des débuts réels à 9,20 s et 28,23 s).
+- Mort courte qui s'arrête moins d'1 s avant la fin d'un clip : comptée.
+- **Minimap détectée automatiquement** : bords fixes (persistants) sur 7 images, recherche du carré le plus net dans un
+  coin bas, puis chaque côté calé au **milieu du trait du cadre** (deux bords : extérieur et intérieur). Si aucun cadre
+  net (webcam par-dessus, montage de plusieurs streamers), rien n'est inventé : réglage à la main.
+- Zone détectée **enregistrée** sur la vidéo quand aucune n'a été réglée : schémas, trajets et encart minimap des clips
+  disponibles sans réglage.
+- **Trajets** sur la minimap : 4 points par seconde (au lieu de 1), fin du trajet conservée (la plus proche du moment).
+
+Limites : vidéos du banc **synthétiques** (règles calées dessus + un vrai clip) ; à confirmer sur de vraies parties
+complètes avec l'outil d'évaluation intégré (« Importer les morts (timeline Riot) »).

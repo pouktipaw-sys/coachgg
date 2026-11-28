@@ -324,3 +324,26 @@ describe.skipIf(!available)("analyse avec la timeline Riot", () => {
     expect((job.result as { detections: { type: string }[] }).detections.filter((d) => d.type === "grey_screen")).toHaveLength(2);
   }, 300_000);
 });
+
+describe.skipIf(!available)("précision de l'analyse (banc d'essai)", () => {
+  it("minimap détectée et enregistrée automatiquement, mort calée à l'image près", async () => {
+    const { env } = await import("@/lib/env");
+    const dir = fixture("bench");
+    if (!existsSync(`${dir}/00-test-court.mp4`)) execSync(`"${env.pythonBin}" analysis/bench/make_corpus.py "${dir}" 00-test-court`);
+    copyFileSync(`${dir}/00-test-court.mp4`, fixture("bench-court.mp4"));
+    const truth = JSON.parse(require("node:fs").readFileSync(`${dir}/labels.json`, "utf8"))["00-test-court.mp4"] as { deaths: number[]; minimap: { x: number; y: number; w: number; h: number } };
+    const u = await makeUser("Bench");
+    const id = await uploadFile(u.id, "bench-court.mp4"); // aucune zone minimap réglée
+    const rec = await prisma.recording.findUniqueOrThrow({ where: { id } });
+    const mm = rec.minimapRegion as { x: number; y: number; w: number; h: number };
+    expect(mm).not.toBeNull();
+    for (const k of ["x", "y", "w", "h"] as const) expect(Math.abs(mm[k] - truth.minimap[k])).toBeLessThan(0.004); // ≤ 3 px en 720p
+    const job = await prisma.analysisJob.findFirstOrThrow({ where: { recordingId: id, type: "ANALYZE_RECORDING" } });
+    const steps = (job.result as { steps: { name: string; note?: string }[]; detections?: { type: string; startMs: number }[] }).steps;
+    expect(steps.find((s) => s.name.startsWith("Extraction"))!.note).toMatch(/Zone minimap détectée automatiquement/);
+    const greys = (await prisma.recommendation.findMany({ where: { recordingId: id }, select: { autoEvidence: true } }))
+      .map((r) => r.autoEvidence as { type?: string; startMs?: number; eventVideoMs?: number })
+      .filter((e) => e.type === "grey_screen");
+    expect(greys.length).toBe(1);
+  }, 300_000);
+});

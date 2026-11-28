@@ -86,7 +86,7 @@ export async function analyzeRecording(job: AnalysisJob) {
       : { value: null, status: "skipped", note: "Pas de synchronisation avec l'horloge du jeu : temps vidéo uniquement." },
   );
 
-  const minimap = (rec.minimapRegion as { x: number; y: number; w: number; h: number } | null) ?? null;
+  let minimap = (rec.minimapRegion as { x: number; y: number; w: number; h: number } | null) ?? null;
   const tmp = await mkdtemp(path.join(os.tmpdir(), "coachgg-an-"));
   const abort = new AbortController();
   try {
@@ -113,10 +113,19 @@ export async function analyzeRecording(job: AnalysisJob) {
             });
           },
         });
+        // Minimap trouvée automatiquement (aucune zone réglée) : enregistrée pour les schémas et l'affichage.
+        let mmNote = "";
+        if (!minimap && o.minimapSource === "auto" && o.minimapGuess) {
+          const { x, y, w, h } = o.minimapGuess;
+          minimap = { x, y, w, h };
+          await prisma.recording.update({ where: { id: rec.id }, data: { minimapRegion: minimap } });
+          Object.assign(rec, { minimapRegion: minimap });
+          mmNote = ` Zone minimap détectée automatiquement (vérifie le cadre dans l'onglet « Synchro »).`;
+        }
         return {
           value: o,
           status: o.warnings.length ? "warning" : "ok",
-          note: `${o.sampling.frames} images échantillonnées à ${o.sampling.fps} i/s ; ${o.events.length} séquence(s) retenue(s).${o.warnings.length ? " " + o.warnings.join(" ") : ""}`,
+          note: `${o.sampling.frames} images échantillonnées à ${o.sampling.fps} i/s ; ${o.events.length} séquence(s) retenue(s).${mmNote}${o.warnings.length ? " " + o.warnings.join(" ") : ""}`,
         };
       } catch (e) {
         if (cancelled) throw new JobCancelledError("Analyse annulée.");

@@ -24,7 +24,9 @@
     "benchmark:analysis": "tsx scripts/benchmark-analysis.ts",
     "agent": "tsx desktop/src/cli.ts",
     "demo:video": "node scripts/demo-video.cjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "bench:corpus": "node -e \"require('child_process').execFileSync(process.platform==='win32'?'.venv-analysis\\\\Scripts\\\\python.exe':'.venv-analysis/bin/python',['analysis/bench/make_corpus.py',process.argv[1]||'bench-corpus'],{stdio:'inherit'})\"",
+    "bench:run": "node -e \"require('child_process').execFileSync(process.platform==='win32'?'.venv-analysis\\\\Scripts\\\\python.exe':'.venv-analysis/bin/python',['analysis/bench/run_bench.py',process.argv[1]||'bench-corpus'],{stdio:'inherit'})\""
   },
   "engines": {
     "node": ">=22.12"

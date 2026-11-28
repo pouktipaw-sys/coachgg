@@ -507,7 +507,7 @@ export function absences(ct: CompactTimeline, puuid: string): Absence[] {
 export type Trail = { style: "actual" | "enemy" | "ally"; label: string; points: Pos[]; times: number[] };
 
 /**
- * Trajets estimés (positions interpolées, une par seconde) des joueurs d'un moment, en coordonnées
+ * Trajets estimés (positions interpolées, 4 par seconde) des joueurs d'un moment, en coordonnées
  * minimap et en temps vidéo (temps de jeu + décalage). Points identiques consécutifs fusionnés.
  */
 export function trails(ct: CompactTimeline, list: { pid: number; style: Trail["style"]; label: string }[], fromGameMs: number, toGameMs: number, offsetMs: number): Trail[] {
@@ -516,7 +516,7 @@ export function trails(ct: CompactTimeline, list: { pid: number; style: Trail["s
   for (const p of list) {
     const points: Pos[] = [];
     const times: number[] = [];
-    for (let t = from; t <= toGameMs; t += 1000) {
+    for (let t = from; t <= toGameMs; t += 250) { // 4 points par seconde : trajet fluide et horodaté finement
       if (isDeadAt(ct, p.pid, t) && t > from) break; // trajet arrêté à la mort
       const pos = positionAt(ct, p.pid, t);
       if (!pos) continue;
@@ -526,7 +526,8 @@ export function trails(ct: CompactTimeline, list: { pid: number; style: Trail["s
       points.push({ x: Math.round(m.x * 1000) / 1000, y: Math.round(m.y * 1000) / 1000 });
       times.push(t + offsetMs);
     }
-    if (points.length >= 2) out.push({ style: p.style, label: p.label, points: points.slice(0, 60), times: times.slice(0, 60) });
+    // Au plus 120 points, en gardant la FIN du trajet (la plus proche du moment analysé).
+    if (points.length >= 2) out.push({ style: p.style, label: p.label, points: points.slice(-120), times: times.slice(-120) });
   }
   return out;
 }
